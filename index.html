@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="개인 및 관리자용 커스텀 링크 쇼터">
+  <title>JJY Links · URL Shortener</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="JJY Links 홈">
+        <span class="brand-mark">↗</span>
+        <span>JJY Links</span>
+      </a>
+      <div id="user-bar" class="user-bar" hidden>
+        <span id="user-email" class="user-email"></span>
+        <span id="role-badge" class="role-badge" hidden>관리자 · admin</span>
+        <button id="logout-button" class="button button-quiet button-small" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <p id="status-message" class="status-message" role="status" aria-live="polite" hidden></p>
+
+      <section id="login-view" class="login-layout">
+        <div class="hero-copy">
+          <p class="eyebrow">PRIVATE LINK MANAGEMENT</p>
+          <h1>짧은 주소를<br><span>간단하게 관리하세요.</span></h1>
+          <p class="hero-description">계정에 로그인해 나만의 커스텀 링크를 만들고 관리할 수 있습니다.</p>
+        </div>
+        <div class="panel login-panel">
+          <div class="panel-heading">
+            <p class="eyebrow">WELCOME BACK</p>
+            <h2>로그인</h2>
+            <p>관리자가 등록한 계정으로 로그인하세요.</p>
+          </div>
+          <form id="login-form" class="stack-form">
+            <label for="email-input">이메일</label>
+            <input id="email-input" name="email" type="email" autocomplete="username" placeholder="name@example.com" required>
+            <label for="password-input">비밀번호</label>
+            <input id="password-input" name="password" type="password" autocomplete="current-password" placeholder="비밀번호" required>
+            <button id="login-button" class="button button-primary button-full" type="submit">로그인</button>
+          </form>
+          <p class="muted-note">회원가입은 제공하지 않습니다. 계정 생성은 Firebase 관리자만 할 수 있습니다.</p>
+        </div>
+      </section>
+
+      <section id="dashboard-view" hidden>
+        <div class="dashboard-intro">
+          <div>
+            <p class="eyebrow">LINK WORKSPACE</p>
+            <h1>링크 관리</h1>
+            <p class="hero-description">원하는 경로를 지정해 기억하기 쉬운 주소를 만드세요.</p>
+          </div>
+          <div id="scope-chip" class="scope-chip">내 링크</div>
+        </div>
+
+        <section class="panel create-panel" aria-labelledby="create-title">
+          <div class="panel-heading">
+            <p class="eyebrow">CREATE A SHORT LINK</p>
+            <h2 id="create-title">새 링크 만들기</h2>
+          </div>
+          <form id="create-form" class="create-form">
+            <div class="field-group">
+              <label for="custom-path-input">커스텀 경로</label>
+              <div class="path-input-wrap">
+                <span class="path-prefix">link.jjy0205.site/</span>
+                <input id="custom-path-input" name="customPath" type="text" placeholder="my-link" autocomplete="off" minlength="3" maxlength="40" pattern="[a-zA-Z0-9_-]{3,40}" aria-describedby="path-help" required>
+              </div>
+              <small id="path-help" class="field-help">영문, 숫자, 하이픈(-), 밑줄(_)만 사용 · 3~40자</small>
+            </div>
+            <div class="field-group">
+              <label for="original-url-input">원본 URL</label>
+              <input id="original-url-input" name="originalUrl" type="url" placeholder="https://example.com/page" maxlength="2048" required>
+              <small class="field-help">http:// 또는 https:// 주소를 입력하세요.</small>
+            </div>
+            <button id="create-button" class="button button-primary" type="submit">링크 생성 <span aria-hidden="true">↗</span></button>
+          </form>
+        </section>
+
+        <section class="links-section" aria-labelledby="links-title">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">YOUR SHORT LINKS</p>
+              <h2 id="links-title">링크 목록 <span id="link-count" class="count-pill">0</span></h2>
+            </div>
+            <button id="refresh-button" class="button button-quiet" type="button">새로고침</button>
+          </div>
+          <div id="links-list" class="links-list"></div>
+          <div id="empty-state" class="empty-state" hidden>
+            <span class="empty-icon" aria-hidden="true">↗</span>
+            <h3>아직 링크가 없습니다.</h3>
+            <p>위에서 첫 번째 커스텀 링크를 만들어 보세요.</p>
+          </div>
+        </section>
+      </section>
+
+      <section id="redirect-view" class="redirect-layout" hidden aria-live="polite">
+        <div class="panel redirect-panel">
+          <div id="redirect-spinner" class="spinner" aria-hidden="true"></div>
+          <p class="eyebrow">JJY LINKS</p>
+          <h1 id="redirect-title">주소로 이동 중입니다.</h1>
+          <p id="redirect-message" class="hero-description">링크를 확인하고 있습니다.</p>
+          <a id="redirect-home" class="text-link" href="/" hidden>관리자 로그인으로 이동</a>
+          <p class="privacy-note">이 링크의 접속 기록에는 IP 주소와 브라우저 정보가 포함될 수 있습니다.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>JJY Links</span>
+      <span>Private link workspace</span>
+    </footer>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

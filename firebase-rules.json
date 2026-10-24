@@ -1,0 +1,47 @@
+{
+  "rules": {
+    "roles": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'admin')",
+        ".write": false
+      }
+    },
+    "links": {
+      ".indexOn": ["creatorUid"],
+      ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (query.orderByChild === 'creatorUid' && query.equalTo === auth.uid))",
+      "$customPath": {
+        ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || !data.exists() || data.child('creatorUid').val() === auth.uid)",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (!data.exists() && newData.child('creatorUid').val() === auth.uid) || (data.exists() && data.child('creatorUid').val() === auth.uid && (!newData.exists() || newData.child('creatorUid').val() === data.child('creatorUid').val())))",
+        ".validate": "newData.hasChildren(['originalUrl', 'creatorUid', 'createdAt'])",
+        "originalUrl": {
+          ".read": true,
+          ".validate": "newData.isString() && newData.val().length <= 2048"
+        },
+        "creatorUid": {
+          ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "logs": {
+          "$logId": {
+            ".write": "!data.exists() && root.child('links').child($customPath).child('originalUrl').exists()",
+            ".validate": "newData.hasChildren(['timestamp', 'ip', 'userAgent'])",
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "ip": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "userAgent": {
+              ".validate": "newData.isString() && newData.val().length <= 512"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

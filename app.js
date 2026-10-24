@@ -27,6 +27,7 @@ import {
   equalTo,
   push,
   set,
+  update,
   remove,
   runTransaction,
   serverTimestamp
@@ -245,6 +246,9 @@ function renderLinks() {
     const created = document.createElement("span");
     created.textContent = formatDate(item.createdAt);
     meta.append(created);
+    const expiry = document.createElement("span");
+    expiry.textContent = item.expiresAt ? `만료: ${formatDate(item.expiresAt)}${Number(item.expiresAt) <= Date.now() ? " (만료됨)" : ""}` : "만료 없음";
+    meta.append(expiry);
     if (currentIsAdmin) {
       const creator = document.createElement("span");
       creator.className = "creator-label";
@@ -288,7 +292,45 @@ function renderLinks() {
       }
     });
 
-    actions.append(copyButton, deleteButton);
+    const qrButton = document.createElement("button");
+    qrButton.className = "button button-quiet button-small";
+    qrButton.type = "button";
+    qrButton.textContent = "QR 코드";
+    qrButton.addEventListener("click", () => {
+      const shortUrl = makeShortUrl(item.customPath);
+      // QR 생성 서비스에 단축 URL을 전달합니다. 민감한 URL은 외부 QR 서비스로 보내지 마세요.
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(shortUrl)}`;
+      window.open(qrUrl, "_blank", "noopener,noreferrer");
+    });
+
+    const expiryButton = document.createElement("button");
+    expiryButton.className = "button button-quiet button-small";
+    expiryButton.type = "button";
+    expiryButton.textContent = "만료일 변경";
+    expiryButton.addEventListener("click", async () => {
+      const currentValue = item.expiresAt ? new Date(Number(item.expiresAt) - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
+      const input = window.prompt("만료 시각을 입력하세요 (YYYY-MM-DDTHH:mm). 비우면 만료 없음.", currentValue);
+      if (input === null) return;
+      let nextExpiry = null;
+      if (input.trim()) {
+        nextExpiry = new Date(input).getTime();
+        if (!Number.isFinite(nextExpiry) || nextExpiry <= Date.now()) {
+          showStatus("만료 시각은 현재보다 미래로 입력해 주세요.", "error");
+          return;
+        }
+      }
+      try {
+        const patch = { expiresAt: nextExpiry };
+        await update(ref(db, `links/${item.customPath}`), patch);
+        showStatus("링크 만료일을 변경했습니다.", "success");
+        await loadLinks();
+      } catch (error) {
+        showStatus("만료일을 변경하지 못했습니다. 링크 소유권과 보안 규칙을 확인해 주세요.", "error");
+        console.error("Updating link expiry failed:", error);
+      }
+    });
+
+    actions.append(copyButton, qrButton, expiryButton, deleteButton);
     card.append(main, actions);
     linksList.append(card);
   }
@@ -302,6 +344,8 @@ async function createShortLink(event) {
   const customPath = String(formData.get("customPath") || "").trim().toLowerCase();
   const inputUrl = String(formData.get("originalUrl") || "").trim();
   const originalUrl = validateSafeHttpUrl(inputUrl);
+  const expiryInput = String(formData.get("expiresAt") || "").trim();
+  const expiresAt = expiryInput ? new Date(expiryInput).getTime() : null;
 
   if (!/^[a-z0-9_-]{3,40}$/.test(customPath)) {
     showStatus("경로는 영문 소문자, 숫자, 하이픈(-), 밑줄(_)로 된 3~40자여야 합니다.", "error");
@@ -309,6 +353,10 @@ async function createShortLink(event) {
   }
   if (!originalUrl) {
     showStatus("올바른 http:// 또는 https:// 원본 URL을 입력해 주세요.", "error");
+    return;
+  }
+  if (expiryInput && (!Number.isFinite(expiresAt) || expiresAt <= Date.now())) {
+    showStatus("만료 시각은 현재보다 미래로 설정해 주세요.", "error");
     return;
   }
 
@@ -328,7 +376,8 @@ async function createShortLink(event) {
       return {
         originalUrl,
         creatorUid: currentUser.uid,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        ...(expiresAt ? { expiresAt } : {})
       };
     }, { applyLocally: false });
 
@@ -410,6 +459,12 @@ async function resolveShortLink(path) {
       return;
     }
 
+    const linkSnapshot = await get(ref(db, `links/${path}`));
+    const linkData = linkSnapshot.val();
+    if (linkData?.expiresAt && Number(linkData.expiresAt) <= Date.now()) {
+      showRedirectError("만료된 링크입니다.", "이 단축 URL의 유효 기간이 끝났습니다.");
+      return;
+    }
     const originalUrl = validateSafeHttpUrl(String(urlSnapshot.val()));
     if (!originalUrl) {
       showRedirectError("이동할 수 없는 링크입니다.", "저장된 원본 주소가 유효한 http 또는 https URL이 아닙니다.");
@@ -434,7 +489,22 @@ loginForm.addEventListener("submit", async (event) => {
   loginButton.textContent = "로그인 중…";
   showStatus("");
   try {
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    // 브라우저에서 수집한 IP/User-Agent는 위조 가능하며 보안 감사용 증거로 사용하지 마세요.
+    try {
+      const ip = await getPublicIp();
+      const logRef = push(ref(db, `loginLogs/${credential.user.uid}`));
+      await set(logRef, {
+        timestamp: serverTimestamp(),
+        email: String(credential.user.email || email).slice(0, 320),
+        uid: credential.user.uid,
+        ip,
+        userAgent: String(navigator.userAgent || "unknown").slice(0, 512)
+      });
+    } catch (logError) {
+      console.warn("Login log was not saved:", logError);
+      showStatus("로그인은 성공했지만 로그인 기록을 저장하지 못했습니다. 보안 규칙을 확인해 주세요.", "error");
+    }
   } catch (error) {
     showStatus(friendlyAuthError(error), "error");
     console.error("Sign-in failed:", error);

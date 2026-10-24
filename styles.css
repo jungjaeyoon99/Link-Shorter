@@ -77,7 +77,7 @@ input:focus { border-color: #8b86f5; box-shadow: 0 0 0 4px rgba(79, 70, 229, .11
 .scope-chip { flex: none; padding: 8px 12px; border: 1px solid #dfe3f9; border-radius: 999px; color: #5148c9; background: #f0f1ff; font-size: 12px; font-weight: 750; }
 .create-panel { padding: clamp(24px, 4vw, 35px); }
 .create-panel .panel-heading { margin-bottom: 22px; }
-.create-form { display: grid; grid-template-columns: 1fr 1.25fr auto; align-items: end; gap: 16px; }
+.create-form { display: grid; grid-template-columns: 1fr 1.25fr 1fr auto; align-items: end; gap: 16px; }
 .field-group { min-width: 0; display: grid; gap: 8px; }
 .path-input-wrap { display: flex; align-items: center; min-width: 0; overflow: hidden; border: 1px solid #d8deea; border-radius: 11px; background: #fff; }
 .path-input-wrap:focus-within { border-color: #8b86f5; box-shadow: 0 0 0 4px rgba(79, 70, 229, .11); }

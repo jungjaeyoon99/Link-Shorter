@@ -73,6 +73,11 @@
               <small id="path-help" class="field-help">영문, 숫자, 하이픈(-), 밑줄(_)만 사용 · 3~40자</small>
             </div>
             <div class="field-group">
+              <label for="expires-at-input">만료 시각 (선택)</label>
+              <input id="expires-at-input" name="expiresAt" type="datetime-local">
+              <small class="field-help">비워 두면 만료되지 않습니다.</small>
+            </div>
+            <div class="field-group">
               <label for="original-url-input">원본 URL</label>
               <input id="original-url-input" name="originalUrl" type="url" placeholder="https://example.com/page" maxlength="2048" required>
               <small class="field-help">http:// 또는 https:// 주소를 입력하세요.</small>

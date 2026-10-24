@@ -36,6 +36,7 @@ import {
 const firebaseConfig = {
   apiKey: "AIzaSyD2_C-IztoFPOKiIKBoawrsj2Y4xVmXIAg",
   authDomain: "jjy-link-shorter.firebaseapp.com",
+  databaseURL: "https://jjy-link-shorter-default-rtdb.firebaseio.com",
   projectId: "jjy-link-shorter",
   storageBucket: "jjy-link-shorter.firebasestorage.app",
   messagingSenderId: "712169188028",

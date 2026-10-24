@@ -501,10 +501,21 @@ function renderLinks() {
         responsePanel.append(loading);
 
         try {
-          const [config, responseSnap] = await Promise.all([
+          const [config, responseSnap, privateLogSnap] = await Promise.all([
             loadSurveyConfig(item.customPath),
-            get(ref(db, `surveyResponses/${item.customPath}`))
+            get(ref(db, `surveyResponses/${item.customPath}`)),
+            currentIsAdmin
+              ? get(ref(db, `privateAccessLogs/${item.customPath}`))
+              : Promise.resolve(null)
           ]);
+
+          // IP와 User-Agent는 관리자만 별도 비공개 로그 경로에서 읽습니다.
+          const privateLogsById = new Map();
+          if (currentIsAdmin && privateLogSnap) {
+            privateLogSnap.forEach((snap) => {
+              if (snap.exists()) privateLogsById.set(snap.key, snap.val());
+            });
+          }
 
           const responseRecords = [];
           responseSnap.forEach((snap) => {
@@ -566,7 +577,10 @@ function renderLinks() {
           table.className = "survey-response-table";
           const thead = document.createElement("thead");
           const headerRow = document.createElement("tr");
-          for (const title of ["제출 시각", ...questions.map((q) => q.label || q.id || "질문")]) {
+          const tableHeaders = ["제출 시각"];
+          if (currentIsAdmin) tableHeaders.push("접속 IP");
+          tableHeaders.push("연결 로그 ID", ...questions.map((q) => q.label || q.id || "질문"));
+          for (const title of tableHeaders) {
             const th = document.createElement("th");
             th.scope = "col";
             th.textContent = title;
@@ -581,6 +595,24 @@ function renderLinks() {
             const timeCell = document.createElement("td");
             timeCell.textContent = response.timestamp ? formatDate(response.timestamp) : "-";
             row.append(timeCell);
+
+            const privateLog = response.accessLogId ? privateLogsById.get(response.accessLogId) : null;
+            if (currentIsAdmin) {
+              const ipCell = document.createElement("td");
+              const responseIp = typeof privateLog?.ip === "string" ? privateLog.ip : "";
+              ipCell.textContent = !responseIp
+                ? "이전 응답 · IP 미기록"
+                : responseIp === "unavailable" ? "IP 조회 실패" : responseIp;
+              if (privateLog?.userAgent) ipCell.title = `브라우저 정보: ${String(privateLog.userAgent).slice(0, 512)}`;
+              row.append(ipCell);
+            }
+
+            const logCell = document.createElement("td");
+            logCell.className = "survey-response-log-id";
+            logCell.textContent = response.accessLogId || "연결 기록 없음";
+            if (response.accessLogId) logCell.title = `privateAccessLogs/${item.customPath}/${response.accessLogId}`;
+            row.append(logCell);
+
             for (const question of questions) {
               const cell = document.createElement("td");
               const answer = response.answers?.[question.id];
@@ -595,7 +627,13 @@ function renderLinks() {
 
           const tableHint = document.createElement("p");
           tableHint.className = "survey-response-hint";
-          tableHint.textContent = "질문이 많을 경우 표를 좌우로 스크롤해 전체 항목을 확인할 수 있습니다.";
+          const hasUnlinkedResponses = responseRecords.some((response) => !response.accessLogId);
+          tableHint.textContent = currentIsAdmin
+            ? (hasUnlinkedResponses
+              ? "IP 주소는 관리자 전용 비공개 로그에서 조회합니다. 연결 로그 ID가 없는 과거 응답은 IP를 정확하게 소급 연결할 수 없습니다."
+              : "IP 주소는 관리자에게만 표시됩니다. 연결 로그 ID는 privateAccessLogs/경로/로그ID에서 확인할 수 있습니다.")
+            : "개인정보 보호를 위해 IP 주소와 브라우저 정보는 표시하지 않습니다. 연결 로그 ID는 관리자에게 문의하거나 로그 추적에 사용할 수 있습니다.";
+          tableHint.textContent += " 질문이 많으면 표를 좌우로 스크롤하세요.";
           responsePanel.append(tableHint);
         } catch (error) {
           responsePanel.replaceChildren();
@@ -794,7 +832,7 @@ async function getPublicIp() {
 
 async function recordAccess(path) {
   const ip = await getPublicIp();
-  const logsRef = ref(db, `links/${path}/logs`);
+  const logsRef = ref(db, `privateAccessLogs/${path}`);
   const newLogRef = push(logsRef);
   const writePromise = set(newLogRef, {
     timestamp: serverTimestamp(),
@@ -887,17 +925,35 @@ surveyForm.addEventListener("submit", async (event) => {
   surveySubmitButton.disabled = true;
   surveySubmitButton.textContent = "저장 중…";
   try {
-    const responsesRef = ref(db, `surveyResponses/${pendingSurvey.path}`);
-    const responseRef = push(responsesRef);
-    await set(responseRef, {
+    // 응답과 접속 로그를 한 번의 원자적 업데이트로 저장해 IP와 응답의 연결이 어긋나지 않게 합니다.
+    const timestamp = Date.now();
+    const ip = await getPublicIp();
+    const userAgent = String(navigator.userAgent || "unknown").slice(0, 512);
+    const responseRef = push(ref(db, `surveyResponses/${pendingSurvey.path}`));
+    const accessLogRef = push(ref(db, `privateAccessLogs/${pendingSurvey.path}`));
+    const responseId = responseRef.key;
+    const accessLogId = accessLogRef.key;
+
+    if (!responseId || !accessLogId) throw new Error("Unable to create response/log IDs");
+
+    const updates = {};
+    updates[`surveyResponses/${pendingSurvey.path}/${responseId}`] = {
       answers,
       consent: true,
-      timestamp: Date.now()
-    });
+      timestamp,
+      accessLogId
+    };
+    updates[`privateAccessLogs/${pendingSurvey.path}/${accessLogId}`] = {
+      timestamp,
+      ip,
+      userAgent,
+      responseId
+    };
+    await update(ref(db), updates);
+
     redirectTitle.textContent = "제출 완료";
-    redirectMessage.textContent = "응답을 저장했습니다. 원본 사이트로 이동합니다.";
+    redirectMessage.textContent = "응답과 접속 로그를 저장했습니다. 원본 사이트로 이동합니다.";
     surveyForm.hidden = true;
-    await recordAccess(pendingSurvey.path);
     window.location.replace(pendingSurvey.originalUrl);
   } catch (error) {
     redirectMessage.textContent = "응답을 저장하지 못했습니다. 입력 내용을 확인하거나 관리자에게 문의해 주세요.";

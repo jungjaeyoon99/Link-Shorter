@@ -143,3 +143,20 @@ IP와 User-Agent는 클라이언트에서 수집하므로 위조될 수 있으�
 - 응답 조회 오류를 모두 Firebase Rules 오류로 오해하지 않도록, 실제 오류 코드와 권한 거부 여부를 구분해 표시합니다.
 - 설문 결과 읽기 권한은 로그인한 링크 생성자 또는 `roles/{uid}` 값이 `admin`인 계정에만 부여해야 합니다. `firebase-rules.json`의 `surveyResponses/$customPath/.read` 조건을 사용 중인 실제 Realtime Database에 게시하세요.
 - 코드가 화면에서 링크 생성자/관리자라고 판단하지만 `PERMISSION_DENIED`가 계속된다면 `app.js`의 `databaseURL`과 규칙을 게시한 Firebase Realtime Database 인스턴스가 동일한지 확인하세요. 또한 `links/{customPath}/creatorUid`와 로그인 UID가 일치하는지 확인하세요.
+
+
+## 설문 응답과 접속 로그 연결
+
+- 새 설문 응답은 `surveyResponses/{customPath}/{responseId}`에 `ip`, `userAgent`, `accessLogId`를 함께 저장합니다. 응답 표에도 접속 IP와 연결 로그 ID가 같은 행에 표시됩니다.
+- 같은 제출의 접속 로그는 `links/{customPath}/logs/{accessLogId}`에 저장되며, 로그의 `responseId`가 원래 설문 응답 ID를 가리킵니다. 응답과 접속 로그는 한 번의 Realtime Database 다중 경로 업데이트로 저장되어 둘 중 하나만 저장되는 상황을 방지합니다.
+- 이전에 저장된 응답에는 IP 또는 연결 ID가 없을 수 있습니다. 해당 응답의 IP는 정확하게 소급 연결할 수 없으며, UI에서 미기록으로 표시합니다.
+- IP와 User-Agent는 브라우저가 외부 IP 조회 서비스에서 얻은 값이므로 조회 실패 시 `unavailable`이 저장될 수 있고, 클라이언트 값은 위조될 수 있습니다. IP/User-Agent 수집 사실과 보관 정책을 이용자에게 명확히 안내하세요.
+
+
+## IP 주소 개인정보 보호 업데이트
+
+- 설문 응답 본문(`surveyResponses`)에는 IP 주소나 User-Agent를 저장하지 않습니다. 응답에는 `accessLogId`만 남깁니다.
+- 접속 로그와 IP/User-Agent는 `privateAccessLogs/{customPath}/{logId}`에 별도 저장하며, 이 경로는 `roles/{uid} === "admin"`인 계정만 읽을 수 있습니다.
+- 일반 사용자는 설문 결과에서 연결 로그 ID와 답변만 볼 수 있고, IP 주소 및 브라우저 정보는 표시되지 않습니다.
+- 기존 버전이 `links/{customPath}/logs`에 저장한 로그는 과거 데이터입니다. Realtime Database Rules의 상위 `.read` 권한은 하위 노드에 상속되므로, 해당 기존 `logs` 노드를 Firebase Console에서 삭제하거나 관리자만 접근 가능한 별도 경로로 이전해야 과거 IP도 노출되지 않습니다.
+- 새 규칙을 게시한 후에는 `links/{customPath}/logs` 아래의 이전 로그를 정리하세요. 새 접속 로그는 `privateAccessLogs`에 저장됩니다.

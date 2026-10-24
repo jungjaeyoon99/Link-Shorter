@@ -99,6 +99,7 @@ input:focus { border-color: #8b86f5; box-shadow: 0 0 0 4px rgba(79, 70, 229, .11
 .survey-response-table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 420px; font-size: 12px; }
 .survey-response-table th, .survey-response-table td { padding: 11px 13px; border-bottom: 1px solid #edf0f6; text-align: left; vertical-align: top; white-space: nowrap; }
 .survey-response-table th { color: #48536b; background: #f1f3fb; font-size: 11px; font-weight: 800; }
+.survey-response-log-id { color: #5b647a; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
 .survey-response-table tbody tr:last-child td { border-bottom: 0; }
 .survey-response-table tbody tr:nth-child(even) { background: #fbfcff; }
 .survey-response-table tbody tr:hover { background: #f2f4ff; }

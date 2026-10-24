@@ -1,0 +1,152 @@
+{
+  "rules": {
+    "roles": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'admin')",
+        ".write": false
+      }
+    },
+    "loginLogs": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('roles').child(auth.uid).val() === 'admin')",
+        "$logId": {
+          ".write": "auth != null && auth.uid === $uid && !data.exists()",
+          ".validate": "newData.hasChildren(['timestamp', 'email', 'uid', 'ip', 'userAgent']) && newData.child('uid').val() === $uid",
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "email": {
+            ".validate": "newData.isString() && newData.val().length <= 320"
+          },
+          "uid": {
+            ".validate": "newData.isString() && newData.val() === $uid"
+          },
+          "ip": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "userAgent": {
+            ".validate": "newData.isString() && newData.val().length <= 512"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "links": {
+      ".indexOn": [
+        "creatorUid"
+      ],
+      ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (query.orderByChild === 'creatorUid' && query.equalTo === auth.uid))",
+      "$customPath": {
+        ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || !data.exists() || data.child('creatorUid').val() === auth.uid)",
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (!data.exists() && newData.child('creatorUid').val() === auth.uid) || (data.exists() && data.child('creatorUid').val() === auth.uid && (!newData.exists() || newData.child('creatorUid').val() === data.child('creatorUid').val())))",
+        ".validate": "newData.hasChildren(['originalUrl', 'creatorUid', 'createdAt'])",
+        "originalUrl": {
+          ".read": true,
+          ".validate": "newData.isString() && newData.val().length <= 2048"
+        },
+        "creatorUid": {
+          ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "expiresAt": {
+          ".validate": "newData.isNumber() && newData.val() > 0",
+          ".read": true
+        },
+        "logs": {
+          "$logId": {
+            ".write": "!data.exists() && root.child('links').child($customPath).child('originalUrl').exists() && root.child('links').child($customPath).child('isDeleted').val() !== true && (!root.child('links').child($customPath).child('expiresAt').exists() || root.child('links').child($customPath).child('expiresAt').val() > now)",
+            ".validate": "newData.hasChildren(['timestamp', 'ip', 'userAgent'])",
+            "timestamp": {
+              ".validate": "newData.isNumber()"
+            },
+            "ip": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "userAgent": {
+              ".validate": "newData.isString() && newData.val().length <= 512"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "isDeleted": {
+          ".read": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "deletedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "deletedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        }
+      }
+    },
+    "surveyConfigs": {
+      "$customPath": {
+        ".read": true,
+        ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (!data.exists() && root.child('links').child($customPath).child('creatorUid').val() === auth.uid))",
+        ".validate": "newData.hasChildren(['enabled']) && newData.child('enabled').isBoolean() && (!newData.child('enabled').val() || newData.child('questions').exists())",
+        "enabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "questions": {
+          "$questionId": {
+            ".validate": "newData.hasChildren(['id','label','type']) && newData.child('id').val() === $questionId && newData.child('label').isString() && newData.child('label').val().length >= 1 && newData.child('label').val().length <= 120 && (newData.child('type').val() === 'int' || (newData.child('type').val() === 'char' && auth != null && root.child('roles').child(auth.uid).val() === 'admin'))",
+            "id": {
+              ".validate": "newData.isString() && newData.val() === $questionId"
+            },
+            "label": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120"
+            },
+            "type": {
+              ".validate": "newData.val() === 'int' || (newData.val() === 'char' && auth != null && root.child('roles').child(auth.uid).val() === 'admin')"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    },
+    "surveyResponses": {
+      "$customPath": {
+        ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || root.child('links').child($customPath).child('creatorUid').val() === auth.uid)",
+        "$responseId": {
+          ".write": "!data.exists() && root.child('links').child($customPath).child('originalUrl').exists() && root.child('links').child($customPath).child('isDeleted').val() !== true && root.child('surveyConfigs').child($customPath).child('enabled').val() === true && (!root.child('links').child($customPath).child('expiresAt').exists() || root.child('links').child($customPath).child('expiresAt').val() > now)",
+          ".validate": "newData.hasChildren(['answers','consent','timestamp']) && newData.child('consent').val() === true",
+          "answers": {
+            "$questionId": {
+              ".validate": "(root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'int' && newData.isNumber()) || (root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'char' && newData.isString() && newData.val().length <= 200)"
+            }
+          },
+          "consent": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    }
+  }
+}

@@ -25,7 +25,7 @@
     <main class="main-content">
       <p id="status-message" class="status-message" role="status" aria-live="polite" hidden></p>
 
-      <section id="login-view" class="login-layout">
+      <section id="login-view" class="login-layout" aria-label="로그인 화면">
         <div class="hero-copy">
           <p class="eyebrow">PRIVATE LINK MANAGEMENT</p>
           <h1>짧은 주소를<br><span>간단하게 관리하세요.</span></h1>
@@ -37,7 +37,7 @@
             <h2>로그인</h2>
             <p>관리자가 등록한 계정으로 로그인하세요.</p>
           </div>
-          <form id="login-form" class="stack-form">
+          <form id="login-form" class="stack-form" action="#" method="post">
             <label for="email-input">이메일</label>
             <input id="email-input" name="email" type="email" autocomplete="username" placeholder="name@example.com" required>
             <label for="password-input">비밀번호</label>
@@ -73,6 +73,22 @@
               <small id="path-help" class="field-help">영문, 숫자, 하이픈(-), 밑줄(_)만 사용 · 3~40자</small>
             </div>
             <div class="field-group">
+              <label for="expires-at-input">만료 시각 (선택)</label>
+              <input id="expires-at-input" name="expiresAt" type="datetime-local">
+              <small class="field-help">비워 두면 만료되지 않습니다.</small>
+            </div>
+            <div class="field-group survey-option-group">
+              <label class="checkbox-label" for="survey-enabled-input">
+                <input id="survey-enabled-input" name="surveyEnabled" type="checkbox">
+                <span>접속 전 설문조사 받기</span>
+              </label>
+              <small class="field-help">질문과 응답 형식을 직접 설정할 수 있습니다. 일반 사용자는 숫자형(int)만 만들 수 있고, 관리자는 문자형(char)도 만들 수 있습니다.</small>
+            </div>
+            <div id="survey-builder" class="survey-builder" hidden>
+              <div class="survey-builder-heading"><strong>설문 질문 설정</strong><button id="add-survey-question" class="button button-quiet button-small" type="button">질문 추가 +</button></div>
+              <div id="survey-question-list" class="survey-question-list"></div>
+            </div>
+            <div class="field-group">
               <label for="original-url-input">원본 URL</label>
               <input id="original-url-input" name="originalUrl" type="url" placeholder="https://example.com/page" maxlength="2048" required>
               <small class="field-help">http:// 또는 https:// 주소를 입력하세요.</small>
@@ -104,6 +120,15 @@
           <p class="eyebrow">JJY LINKS</p>
           <h1 id="redirect-title">주소로 이동 중입니다.</h1>
           <p id="redirect-message" class="hero-description">링크를 확인하고 있습니다.</p>
+          <form id="survey-form" class="stack-form survey-form" hidden>
+            <p id="survey-description" class="hero-description">아래 질문에 응답해 주세요.</p>
+            <div id="survey-questions-container" class="survey-questions-container"></div>
+            <label class="checkbox-label" for="survey-consent">
+              <input id="survey-consent" name="consent" type="checkbox" required>
+              <span>입력한 응답이 저장되는 것에 동의합니다.</span>
+            </label>
+            <button id="survey-submit-button" class="button button-primary button-full" type="submit">제출하고 이동</button>
+          </form>
           <a id="redirect-home" class="text-link" href="/" hidden>관리자 로그인으로 이동</a>
           <p class="privacy-note">이 링크의 접속 기록에는 IP 주소와 브라우저 정보가 포함될 수 있습니다.</p>
         </div>

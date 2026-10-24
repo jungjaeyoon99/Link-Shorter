@@ -490,52 +490,154 @@ function renderLinks() {
       responsesButton.className = "button button-quiet button-small";
       responsesButton.type = "button";
       responsesButton.textContent = "설문 응답 보기";
-      responsesButton.addEventListener("click", async () => {
-        let responsePanel = card.querySelector(".survey-response-panel");
-        if (responsePanel) { responsePanel.remove(); responsesButton.textContent = "설문 응답 보기"; return; }
-        responsePanel = document.createElement("section");
-        responsePanel.className = "survey-response-panel";
-        responsePanel.textContent = "응답을 불러오는 중…";
-        card.append(responsePanel);
-        responsesButton.textContent = "응답 닫기";
+
+      const loadResponsesIntoPanel = async (responsePanel) => {
+        responsesButton.disabled = true;
+        responsePanel.replaceChildren();
+        responsePanel.classList.add("is-loading");
+        const loading = document.createElement("p");
+        loading.className = "survey-response-loading";
+        loading.textContent = "응답을 불러오는 중…";
+        responsePanel.append(loading);
+
         try {
           const [config, responseSnap] = await Promise.all([
             loadSurveyConfig(item.customPath),
             get(ref(db, `surveyResponses/${item.customPath}`))
           ]);
+
+          const responseRecords = [];
+          responseSnap.forEach((snap) => {
+            const value = snap.val();
+            if (value && typeof value === "object") {
+              responseRecords.push({ id: snap.key, ...value });
+            }
+          });
+          responseRecords.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+
+          let questions = Object.values(config.questions || {}).filter((question) =>
+            question && typeof question === "object" && (question.id || question.label)
+          );
+
+          // 예전 설정에 질문 목록이 없더라도 저장된 answers 키를 기반으로 응답을 표시합니다.
+          if (questions.length === 0) {
+            const discoveredIds = new Set();
+            for (const response of responseRecords) {
+              Object.keys(response.answers || {}).forEach((questionId) => discoveredIds.add(questionId));
+            }
+            questions = [...discoveredIds].map((id) => ({ id, label: id, type: "char" }));
+          }
+
           responsePanel.replaceChildren();
+          responsePanel.classList.remove("is-loading");
+
+          const header = document.createElement("div");
+          header.className = "survey-response-heading";
           const heading = document.createElement("h3");
-          heading.textContent = `설문 응답 · ${responseSnap.numChildren()}명`;
-          responsePanel.append(heading);
-          if (Object.keys(config.questions || {}).length) {
+          heading.textContent = `설문 응답 · ${responseRecords.length}건`;
+          const count = document.createElement("span");
+          count.className = "survey-response-count";
+          count.textContent = `${responseRecords.length}개 응답`;
+          header.append(heading, count);
+          responsePanel.append(header);
+
+          if (questions.length > 0) {
             const qText = document.createElement("p");
             qText.className = "survey-config-summary";
-            qText.textContent = `질문: ${Object.values(config.questions).map((q) => `${q.label} (${q.type})`).join(" · ")}`;
+            qText.textContent = `질문 ${questions.length}개 · ${questions.map((q) => q.label || q.id).join(" · ")}`;
             responsePanel.append(qText);
           }
-          if (!responseSnap.exists()) {
-            const empty = document.createElement("p"); empty.textContent = "아직 제출된 응답이 없습니다."; responsePanel.append(empty);
-          } else {
-            const table = document.createElement("table"); table.className = "survey-response-table";
-            const thead = document.createElement("thead"); const hr = document.createElement("tr");
-            for (const title of ["제출 시각", ...Object.values(config.questions || {}).map((q) => q.label)]) { const th = document.createElement("th"); th.textContent = title; hr.append(th); }
-            thead.append(hr); table.append(thead);
-            const tbody = document.createElement("tbody");
-            const responses = [];
-            responseSnap.forEach((snap) => responses.push({ id: snap.key, ...snap.val() }));
-            responses.sort((a,b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
-            for (const response of responses) {
-              const tr = document.createElement("tr");
-              const time = document.createElement("td"); time.textContent = response.timestamp ? formatDate(response.timestamp) : "-"; tr.append(time);
-              for (const q of Object.values(config.questions || {})) { const td = document.createElement("td"); td.textContent = String(response.answers?.[q.id] ?? "-"); tr.append(td); }
-              tbody.append(tr);
-            }
-            table.append(tbody); responsePanel.append(table);
+
+          if (responseRecords.length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "survey-response-empty";
+            const emptyTitle = document.createElement("strong");
+            emptyTitle.textContent = "아직 제출된 응답이 없습니다.";
+            const emptyDescription = document.createElement("p");
+            emptyDescription.textContent = "누군가 설문에 답변하고 제출하면 이곳에 결과가 표시됩니다.";
+            empty.append(emptyTitle, emptyDescription);
+            responsePanel.append(empty);
+            return;
           }
+
+          const tableWrap = document.createElement("div");
+          tableWrap.className = "survey-response-table-wrap";
+          const table = document.createElement("table");
+          table.className = "survey-response-table";
+          const thead = document.createElement("thead");
+          const headerRow = document.createElement("tr");
+          for (const title of ["제출 시각", ...questions.map((q) => q.label || q.id || "질문")]) {
+            const th = document.createElement("th");
+            th.scope = "col";
+            th.textContent = title;
+            headerRow.append(th);
+          }
+          thead.append(headerRow);
+          table.append(thead);
+
+          const tbody = document.createElement("tbody");
+          for (const response of responseRecords) {
+            const row = document.createElement("tr");
+            const timeCell = document.createElement("td");
+            timeCell.textContent = response.timestamp ? formatDate(response.timestamp) : "-";
+            row.append(timeCell);
+            for (const question of questions) {
+              const cell = document.createElement("td");
+              const answer = response.answers?.[question.id];
+              cell.textContent = answer === undefined || answer === null || answer === "" ? "-" : String(answer);
+              row.append(cell);
+            }
+            tbody.append(row);
+          }
+          table.append(tbody);
+          tableWrap.append(table);
+          responsePanel.append(tableWrap);
+
+          const tableHint = document.createElement("p");
+          tableHint.className = "survey-response-hint";
+          tableHint.textContent = "질문이 많을 경우 표를 좌우로 스크롤해 전체 항목을 확인할 수 있습니다.";
+          responsePanel.append(tableHint);
         } catch (error) {
-          responsePanel.textContent = "응답을 불러오지 못했습니다. Firebase 보안 규칙에서 링크 생성자/관리자 읽기를 허용했는지 확인하세요.";
-          console.error("Loading survey responses failed:", error);
+          responsePanel.replaceChildren();
+          responsePanel.classList.remove("is-loading");
+          const isPermissionError = /PERMISSION_DENIED|permission.denied|insufficient permissions/i.test(
+            `${error?.code || ""} ${error?.message || ""}`
+          );
+          const errorTitle = document.createElement("h3");
+          errorTitle.textContent = isPermissionError ? "설문 결과를 읽을 권한이 없습니다." : "설문 결과를 불러오지 못했습니다.";
+          const errorMessage = document.createElement("p");
+          errorMessage.className = "survey-response-error-message";
+          const linkOwnerMatches = Boolean(currentUser?.uid && item.creatorUid === currentUser.uid);
+          if (isPermissionError && (linkOwnerMatches || currentIsAdmin)) {
+            errorMessage.textContent = `화면에서는 ${currentIsAdmin ? "관리자" : "링크 생성자"} 계정으로 확인되지만 데이터베이스 읽기가 거부되었습니다. app.js의 databaseURL이 규칙을 게시한 Realtime Database 주소와 같은지, 그 데이터베이스의 Rules가 실제로 게시되었는지 확인해 주세요. 읽기 규칙은 admin 또는 links/${item.customPath}/creatorUid와 로그인 UID가 같은 계정에 허용되어야 합니다.`;
+          } else if (isPermissionError) {
+            errorMessage.textContent = `현재 로그인 계정은 이 링크의 생성자(${item.creatorUid || "UID 없음"})와 다르고 관리자 권한도 없는 것으로 확인됩니다. 링크 생성자 계정으로 로그인하거나 roles/${currentUser?.uid || "사용자 UID"} 값을 admin으로 지정한 관리자 계정으로 확인해 주세요.`;
+          } else {
+            errorMessage.textContent = "네트워크 연결과 Firebase 프로젝트 설정을 확인해 주세요. 자세한 오류는 브라우저 개발자 도구의 Console에서 확인할 수 있습니다.";
+          }
+          const errorCode = document.createElement("code");
+          errorCode.className = "survey-response-error-code";
+          errorCode.textContent = `오류 정보: ${String(error?.code || error?.message || "unknown").slice(0, 180)}`;
+          responsePanel.append(errorTitle, errorMessage, errorCode);
+          console.error(`Loading survey responses failed for ${item.customPath}:`, error);
+        } finally {
+          responsesButton.disabled = false;
         }
+      };
+
+      responsesButton.addEventListener("click", async () => {
+        const existingPanel = card.querySelector(".survey-response-panel");
+        if (existingPanel) {
+          existingPanel.remove();
+          responsesButton.textContent = "설문 응답 보기";
+          return;
+        }
+        const responsePanel = document.createElement("section");
+        responsePanel.className = "survey-response-panel";
+        responsePanel.setAttribute("aria-label", `/${item.customPath} 설문 응답 결과`);
+        card.append(responsePanel);
+        responsesButton.textContent = "응답 닫기";
+        await loadResponsesIntoPanel(responsePanel);
       });
       actions.append(responsesButton);
       }

@@ -134,3 +134,12 @@ IP와 User-Agent는 클라이언트에서 수집하므로 위조될 수 있으�
 - Firebase Rules도 관리자만 `char` 질문을 저장할 수 있도록 제한합니다. 화면에서만 숨기는 방식이 아닙니다.
 - 기존 버전에서 링크 레코드 안에 `surveyEnabled`만 저장했던 링크는 새 `surveyConfigs/{customPath}` 구조로 설문 설정을 한 번 다시 구성해야 할 수 있습니다.
 - 업데이트 후 Firebase Console의 Realtime Database → Rules에 포함된 `firebase-rules.json` 전체를 게시해야 새 설문 응답 조회 권한과 관리자 전용 설정 변경 권한이 적용됩니다.
+
+
+## 설문 응답 표시 문제 해결 및 UI 업데이트
+
+- 링크 목록은 화면 폭에 맞춰 가로 카드 그리드로 배치됩니다. 데스크톱에서는 가능한 경우 두 개 이상의 열을 사용하고, 좁은 화면에서는 한 열로 전환합니다.
+- `설문 응답 보기` 패널은 링크 카드 전체 폭을 차지하며, 응답 표는 열이 많을 때 좌우 스크롤을 지원합니다.
+- 응답 조회 오류를 모두 Firebase Rules 오류로 오해하지 않도록, 실제 오류 코드와 권한 거부 여부를 구분해 표시합니다.
+- 설문 결과 읽기 권한은 로그인한 링크 생성자 또는 `roles/{uid}` 값이 `admin`인 계정에만 부여해야 합니다. `firebase-rules.json`의 `surveyResponses/$customPath/.read` 조건을 사용 중인 실제 Realtime Database에 게시하세요.
+- 코드가 화면에서 링크 생성자/관리자라고 판단하지만 `PERMISSION_DENIED`가 계속된다면 `app.js`의 `databaseURL`과 규칙을 게시한 Firebase Realtime Database 인스턴스가 동일한지 확인하세요. 또한 `links/{customPath}/creatorUid`와 로그인 UID가 일치하는지 확인하세요.

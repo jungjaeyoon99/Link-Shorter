@@ -55,13 +55,14 @@ import {
 
 // Firebase Console > Project settings > Your apps에서 발급한 값으로 교체하세요.
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "YOUR_DATABASE_URL",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyD2_C-IztoFPOKiIKBoawrsj2Y4xVmXIAg",
+  authDomain: "jjy-link-shorter.firebaseapp.com",
+  databaseURL: "https://jjy-link-shorter-default-rtdb.firebaseio.com",
+  projectId: "jjy-link-shorter",
+  storageBucket: "jjy-link-shorter.firebasestorage.app",
+  messagingSenderId: "712169188028",
+  appId: "1:712169188028:web:d87a416fcbd7130b4c3eb9",
+  measurementId: "G-BLPYKV4T43"
 };
 
 const $ = (selector) => document.querySelector(selector);

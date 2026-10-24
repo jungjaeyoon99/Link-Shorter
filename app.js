@@ -1,3 +1,16 @@
+/**
+JJY Links - Custom URL Shortener
+Copyright (C) 2026 Jaeyun Jeong
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License
+as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU Affero General Public License for details.
+License: https://www.gnu.org/licenses/agpl-3.0.html
+*/
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 import {
   getAuth,
@@ -21,13 +34,13 @@ import {
 
 // Firebase Console > Project settings > Your apps에서 발급한 값으로 교체하세요.
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  databaseURL: "YOUR_DATABASE_URL",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyD2_C-IztoFPOKiIKBoawrsj2Y4xVmXIAg",
+  authDomain: "jjy-link-shorter.firebaseapp.com",
+  projectId: "jjy-link-shorter",
+  storageBucket: "jjy-link-shorter.firebasestorage.app",
+  messagingSenderId: "712169188028",
+  appId: "1:712169188028:web:d87a416fcbd7130b4c3eb9",
+  measurementId: "G-BLPYKV4T43"
 };
 
 const $ = (selector) => document.querySelector(selector);

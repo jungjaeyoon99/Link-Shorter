@@ -1,3 +1,37 @@
+/**
+JJY Links - Custom URL Shortener
+Copyright (C) 2026 Jaeyun Jeong
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License
+as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU Affero General Public License for details.
+License: https://www.gnu.org/licenses/agpl-3.0.html
+*/
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>주소로 이동 중 · JJY Links</title>
+  <meta name="robots" content="noindex">
+</head>
+<body>
+  <p>주소를 확인하고 있습니다…</p>
+  <script>
+    (function () {
+      // GitHub Pages가 /custom-path 요청에 404.html을 반환하므로 원래 경로를 query에 담아 루트로 이동합니다.
+      var originalRoute = window.location.pathname + window.location.search + window.location.hash;
+      var target = new URL("/", window.location.origin);
+      target.searchParams.set("__ghpages_route", originalRoute);
+      window.location.replace(target.href);
+    })();
+  </script>
+</body>
+</html>
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
 import {
   getAuth,

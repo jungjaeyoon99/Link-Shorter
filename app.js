@@ -30,7 +30,9 @@ import {
   update,
   remove,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  onValue,
+  limitToLast
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-database.js";
 
 // Firebase Console > Project settings > Your apps에서 발급한 값으로 교체하세요.
@@ -77,6 +79,7 @@ let currentLinks = [];
 let pendingSurvey = null;
 let loginInProgress = false;
 let authObservationId = 0;
+let accessLogUnsubscribe = null;
 
 function isConfigReady() {
   const required = ["apiKey", "authDomain", "databaseURL", "projectId", "appId"];
@@ -187,6 +190,8 @@ async function startApplication(routePath) {
 
     if (!user) {
       currentLinks = [];
+      if(accessLogUnsubscribe){accessLogUnsubscribe();accessLogUnsubscribe=null;}
+      $("#admin-access-logs").hidden=true;
       $("#user-bar").hidden = true;
       switchView("login");
       return;
@@ -205,6 +210,7 @@ async function startApplication(routePath) {
       switchView("dashboard");
       showStatus("");
       await loadLinks();
+      setupAdminAccessLogs();
     } catch (error) {
       // Do not leave the browser authenticated while forcing it back to the login screen.
       // That state made subsequent login attempts appear to do nothing when role reads were denied.
@@ -233,67 +239,81 @@ function makeQuestionId() {
 }
 
 function addQuestionEditor(question = {}, target = surveyQuestionList) {
-  const row = document.createElement("div");
-  row.className = "survey-question-editor";
+  const row = document.createElement("div"); row.className = "survey-question-editor";
   row.dataset.questionId = question.id || makeQuestionId();
-  const label = document.createElement("input");
-  label.type = "text";
-  label.className = "survey-question-label";
-  label.placeholder = "질문 내용 (예: 학번)";
-  label.maxLength = 120;
-  label.value = question.label || "";
-  label.required = true;
-  label.setAttribute("aria-label", "질문 내용");
-  const type = document.createElement("select");
-  type.className = "survey-question-type";
-  type.setAttribute("aria-label", "응답 형식");
-  const intOption = new Option("int · 숫자만", "int");
-  type.add(intOption);
-  if (currentIsAdmin) type.add(new Option("char · 문자", "char"));
-  type.value = currentIsAdmin && question.type === "char" ? "char" : "int";
-  const removeButton = document.createElement("button");
-  removeButton.type = "button";
-  removeButton.className = "button button-quiet button-small";
-  removeButton.textContent = "삭제";
-  removeButton.addEventListener("click", () => row.remove());
-  row.append(label, type, removeButton);
-  target.append(row);
-  return row;
+  const label = document.createElement("input"); label.type = "text"; label.className = "survey-question-label";
+  label.placeholder = "질문 내용"; label.maxLength = 120; label.value = question.label || ""; label.required = true;
+  const type = document.createElement("select"); type.className = "survey-question-type";
+  [["int","숫자 입력"], ...(currentIsAdmin ? [["char","문자 입력"]] : []), ["singleChoice","객관식 · 하나 선택"], ["multipleChoice","객관식 · 여러 개 선택"]].forEach(([v,t]) => type.add(new Option(t,v)));
+  type.value = ["int","singleChoice","multipleChoice"].includes(question.type) || (currentIsAdmin && question.type === "char") ? question.type : "int";
+  const options = document.createElement("textarea"); options.className = "survey-question-options";
+  options.placeholder = "선택지를 한 줄에 하나씩 입력 (객관식 전용)"; options.rows = 3;
+  options.value = Array.isArray(question.options) ? question.options.join("\n") : "";
+  options.hidden = !["singleChoice","multipleChoice"].includes(type.value);
+  type.addEventListener("change", () => { options.hidden = !["singleChoice","multipleChoice"].includes(type.value); });
+  const removeButton = document.createElement("button"); removeButton.type = "button";
+  removeButton.className = "button button-quiet button-small"; removeButton.textContent = "삭제";
+  removeButton.addEventListener("click", () => row.remove()); row.append(label,type,options,removeButton); target.append(row); return row;
 }
-
 function readQuestionEditors(target = surveyQuestionList) {
-  return [...target.querySelectorAll(".survey-question-editor")].map((row) => ({
-    id: row.dataset.questionId || makeQuestionId(),
-    label: String(row.querySelector(".survey-question-label")?.value || "").trim().slice(0, 120),
-    type: currentIsAdmin && row.querySelector(".survey-question-type")?.value === "char" ? "char" : "int"
-  })).filter((q) => q.label);
+  return [...target.querySelectorAll(".survey-question-editor")].map(row => {
+    const type = row.querySelector(".survey-question-type")?.value || "int";
+    const q = { id: row.dataset.questionId || makeQuestionId(), label: String(row.querySelector(".survey-question-label")?.value || "").trim().slice(0,120), type };
+    if (type === "singleChoice" || type === "multipleChoice") q.options = [...new Set(String(row.querySelector(".survey-question-options")?.value || "").split(/\r?\n/).map(v=>v.trim()).filter(Boolean))].slice(0,30);
+    return q;
+  }).filter(q=>q.label);
 }
-
 function renderSurveyQuestions(questions, target = surveyQuestionsContainer) {
-  target.replaceChildren();
-  const questionList = Array.isArray(questions) ? questions : Object.values(questions || {});
-  for (const question of questionList) {
-    const label = document.createElement("label");
-    label.textContent = question.label;
-    label.htmlFor = `response-${question.id}`;
-    const input = document.createElement("input");
-    input.id = `response-${question.id}`;
-    input.name = question.id;
-    input.dataset.questionId = question.id;
-    input.dataset.questionType = question.type === "char" ? "char" : "int";
-    input.type = question.type === "char" ? "text" : "number";
-    input.inputMode = question.type === "char" ? "text" : "numeric";
-    input.maxLength = question.type === "char" ? 200 : 40;
-    if (input.type === "number") { input.step = "1"; input.pattern = "[0-9]+"; }
-    input.placeholder = question.type === "char" ? "응답 입력" : "숫자만 입력";
-    input.required = true;
-    target.append(label, input);
+  target.replaceChildren(); const list = Array.isArray(questions) ? questions : Object.values(questions || {});
+  for (const q of list) {
+    const field = document.createElement("fieldset"); field.className = "survey-question-field";
+    const legend = document.createElement("legend"); legend.textContent = q.label || "질문"; field.append(legend);
+    if (q.type === "singleChoice" || q.type === "multipleChoice") {
+      (q.options || []).forEach((option,index)=>{ const label=document.createElement("label"); label.className="choice-option";
+        const input=document.createElement("input"); input.type=q.type === "singleChoice" ? "radio" : "checkbox"; input.name=q.id; input.value=option;
+        input.dataset.questionId=q.id; input.dataset.questionType=q.type; input.required=q.type === "singleChoice" && index===0;
+        label.append(input,document.createTextNode(option)); field.append(label); });
+    } else {
+      const input=document.createElement("input"); input.id=`response-${q.id}`; input.name=q.id; input.dataset.questionId=q.id;
+      input.dataset.questionType=q.type === "char" ? "char" : "int"; input.type=q.type === "char" ? "text" : "number";
+      input.inputMode=q.type === "char" ? "text" : "numeric"; input.maxLength=q.type === "char" ? 200 : 40;
+      if(input.type==="number") input.step="1"; input.placeholder=q.type === "char" ? "응답 입력" : "숫자만 입력"; input.required=true; field.append(input);
+    }
+    target.append(field);
   }
 }
 
 async function loadSurveyConfig(path) {
   const snap = await get(ref(db, `surveyConfigs/${path}`));
   return snap.exists() ? snap.val() : { enabled: false, questions: [] };
+}
+
+
+function setupAdminAccessLogs() {
+  const panel=$("#admin-access-logs"); if(!panel || !currentIsAdmin)return; panel.hidden=false;
+  if(accessLogUnsubscribe)accessLogUnsubscribe();
+  const search=$("#access-log-search"), body=$("#access-log-rows"), status=$("#access-log-status");
+  const rowsByKey=new Map(), stops=[];
+  const draw=()=>{
+    body.replaceChildren(); const rows=[...rowsByKey.values()].sort((a,b)=>Number(b.timestamp||0)-Number(a.timestamp||0));
+    const term=String(search.value||"").toLowerCase();
+    rows.filter(r=>`${r.path} ${r.ip} ${r.userAgent} ${r.id}`.toLowerCase().includes(term)).slice(0,500).forEach(r=>{
+      const tr=document.createElement("tr"); [r.path,formatDate(Number(r.timestamp)),r.ip||"미기록",r.userAgent||"미기록",r.id].forEach(v=>{const td=document.createElement("td");td.textContent=String(v);tr.append(td);}); body.append(tr);
+    });
+    status.textContent=`최근 ${rows.length}건 수신 · 링크별 최근 100건까지 실시간 표시`;
+  };
+  search.oninput=draw;
+  for(const item of currentLinks){
+    const logQuery=query(ref(db,`privateAccessLogs/${item.customPath}`),orderByChild("timestamp"),limitToLast(100));
+    const stop=onValue(logQuery,snapshot=>{
+      for(const key of [...rowsByKey.keys()])if(key.startsWith(`${item.customPath}::`))rowsByKey.delete(key);
+      snapshot.forEach(logSnap=>rowsByKey.set(`${item.customPath}::${logSnap.key}`,{path:item.customPath,id:logSnap.key,...(logSnap.val()||{})}));
+      draw();
+    },error=>{status.textContent=`${item.customPath} 로그 조회 오류: ${error.code||error.message}`;});
+    stops.push(stop);
+  }
+  accessLogUnsubscribe=()=>stops.forEach(stop=>stop());
+  if(!currentLinks.length)status.textContent="표시할 링크가 없습니다.";
 }
 
 async function loadLinks() {
@@ -557,6 +577,18 @@ function renderLinks() {
             qText.className = "survey-config-summary";
             qText.textContent = `질문 ${questions.length}개 · ${questions.map((q) => q.label || q.id).join(" · ")}`;
             responsePanel.append(qText);
+            for (const question of questions.filter(q => q.type === "singleChoice" || q.type === "multipleChoice")) {
+              const stat = document.createElement("div"); stat.className = "survey-stat-block";
+              const title = document.createElement("strong"); title.textContent = `${question.label} · 선택 비율`; stat.append(title);
+              const total = responseRecords.filter(r => r.answers && r.answers[question.id] !== undefined).length;
+              for (const option of question.options || []) {
+                const count = responseRecords.filter(r => { const a=r.answers?.[question.id]; return Array.isArray(a) ? a.includes(option) : a === option; }).length;
+                const line=document.createElement("div"); line.className="survey-stat-line";
+                const label=document.createElement("span"); label.textContent=`${option} · ${count}명 (${total ? (count/total*100).toFixed(1) : "0.0"}%)`;
+                const bar=document.createElement("div"); bar.className="survey-stat-track"; const fill=document.createElement("span"); fill.style.width=`${total ? count/total*100 : 0}%`; bar.append(fill); line.append(label,bar); stat.append(line);
+              }
+              responsePanel.append(stat);
+            }
           }
 
           if (responseRecords.length === 0) {
@@ -731,9 +763,8 @@ async function createShortLink(event) {
   const surveyEnabled = formData.get("surveyEnabled") === "on";
   const surveyQuestions = readQuestionEditors();
 
-  if (surveyEnabled && surveyQuestions.length === 0) {
-    showStatus("설문을 활성화하려면 질문을 하나 이상 입력하세요.", "error"); return;
-  }
+  if (surveyEnabled && surveyQuestions.length === 0) { showStatus("설문을 활성화하려면 질문을 하나 이상 입력하세요.", "error"); return; }
+  if (surveyEnabled && surveyQuestions.some(q => (q.type === "singleChoice" || q.type === "multipleChoice") && q.options.length < 2)) { showStatus("객관식 질문에는 선택지를 2개 이상 입력해 주세요.", "error"); return; }
   if (!/^[a-z0-9_-]{3,40}$/.test(customPath)) {
     showStatus("경로는 영문 소문자, 숫자, 하이픈(-), 밑줄(_)로 된 3~40자여야 합니다.", "error");
     return;
@@ -765,6 +796,9 @@ async function createShortLink(event) {
         creatorUid: currentUser.uid,
         createdAt: Date.now(),
         isDeleted: false,
+        rateLimitEnabled: formData.get("rateLimitEnabled") === "on",
+        rateLimitMax: Math.min(100, Math.max(1, Number(formData.get("rateLimitMax") || 5))),
+        rateLimitMessage: String(formData.get("rateLimitMessage") || "접속 횟수 제한에 도달했습니다. 관리자에게 문의해 주세요.").slice(0,240),
         ...(expiresAt ? { expiresAt } : {})
       };
     }, { applyLocally: false });
@@ -830,19 +864,17 @@ async function getPublicIp() {
   }
 }
 
-async function recordAccess(path) {
-  const ip = await getPublicIp();
-  const logsRef = ref(db, `privateAccessLogs/${path}`);
-  const newLogRef = push(logsRef);
-  const writePromise = set(newLogRef, {
-    timestamp: serverTimestamp(),
-    ip,
-    userAgent: String(navigator.userAgent || "unknown").slice(0, 512)
-  }).catch((error) => {
-    // 리다이렉트는 로그 실패로 막지 않습니다. 실제 운영에서는 App Check/서버 측 로깅을 권장합니다.
-    console.warn("Access log was not saved:", error);
-  });
-  await waitAtMost(writePromise, 1600);
+async function sha256Hex(value) { const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)); return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
+async function checkAndRecordAccess(path, writeLog = true) {
+  const ip=await getPublicIp();
+  const [enabledSnap,maxSnap,messageSnap]=await Promise.all([get(ref(db,`links/${path}/rateLimitEnabled`)),get(ref(db,`links/${path}/rateLimitMax`)),get(ref(db,`links/${path}/rateLimitMessage`))]);
+  if(enabledSnap.val()===true && ip!=="unavailable") {
+    const key=await sha256Hex(ip); const counter=ref(db,`rateLimits/${path}/${key}`);
+    const tx=await runTransaction(counter,current=>Number(current||0)+1,{applyLocally:false});
+    if(Number(tx.snapshot.val()||0)>Math.max(1,Number(maxSnap.val()||5))) return {allowed:false,message:String(messageSnap.val()||"접속 횟수 제한에 도달했습니다.").slice(0,240)};
+  }
+  if(writeLog){const log=push(ref(db,`privateAccessLogs/${path}`));await set(log,{timestamp:Date.now(),ip,userAgent:String(navigator.userAgent||"unknown").slice(0,512)});}
+  return {allowed:true,ip};
 }
 
 function showRedirectError(title, message) {
@@ -897,9 +929,8 @@ async function resolveShortLink(path) {
       return;
     }
 
-    redirectTitle.textContent = "주소로 이동 중입니다.";
-    redirectMessage.textContent = "접속 기록을 저장한 뒤 원본 페이지로 이동합니다.";
-    await recordAccess(path);
+    const consent=window.confirm("개인정보 안내\n이 링크 이용 시 접속 IP 주소, 접속 시각, 브라우저 정보(User-Agent)가 저장될 수 있습니다. 동의하지 않으면 접속 기록을 저장하지 않고 이동합니다. 계속하시겠습니까?");
+    if(consent){ redirectTitle.textContent="접속 기록을 저장하고 있습니다."; redirectMessage.textContent="잠시 후 원본 페이지로 이동합니다."; const result=await checkAndRecordAccess(path); if(!result.allowed){showRedirectError("접속 횟수 제한",result.message);return;} }
     window.location.replace(originalUrl);
   } catch (error) {
     showRedirectError("링크를 열 수 없습니다.", "데이터베이스 연결을 확인하거나 잠시 후 다시 시도해 주세요.");
@@ -913,13 +944,16 @@ surveyForm.addEventListener("submit", async (event) => {
   const consent = $("#survey-consent").checked;
   const answers = {};
   for (const question of pendingSurvey.questions || []) {
-    const input = surveyQuestionsContainer.querySelector(`[data-question-id="${question.id}"]`);
-    const value = String(input?.value || "").trim();
-    if (!value || (question.type !== "char" && !/^[0-9]+$/.test(value))) {
-      redirectMessage.textContent = question.type === "char" ? `“${question.label}” 항목을 입력해 주세요.` : `“${question.label}” 항목에는 숫자만 입력해 주세요.`;
-      input?.focus(); return;
+    const controls = [...surveyQuestionsContainer.querySelectorAll(`[data-question-id="${question.id}"]`)];
+    if (question.type === "singleChoice" || question.type === "multipleChoice") {
+      const selected = controls.filter(c=>c.checked).map(c=>c.value);
+      if (!selected.length) { redirectMessage.textContent=`“${question.label}” 항목을 선택해 주세요.`; controls[0]?.focus(); return; }
+      answers[question.id] = question.type === "singleChoice" ? selected[0] : selected;
+    } else {
+      const input=controls[0], value=String(input?.value || "").trim();
+      if (!value || (question.type !== "char" && !/^[0-9]+$/.test(value))) { redirectMessage.textContent=`“${question.label}” 항목을 입력해 주세요.`; input?.focus(); return; }
+      answers[question.id]=question.type === "char" ? value.slice(0,200) : Number(value);
     }
-    answers[question.id] = question.type === "char" ? value.slice(0, 200) : Number(value);
   }
   if (!consent) { redirectMessage.textContent = "응답 저장 동의에 체크해 주세요."; return; }
   surveySubmitButton.disabled = true;
@@ -927,7 +961,9 @@ surveyForm.addEventListener("submit", async (event) => {
   try {
     // 응답과 접속 로그를 한 번의 원자적 업데이트로 저장해 IP와 응답의 연결이 어긋나지 않게 합니다.
     const timestamp = Date.now();
-    const ip = await getPublicIp();
+    const decision = await checkAndRecordAccess(pendingSurvey.path, false);
+    if (!decision.allowed) throw new Error(decision.message);
+    const ip = decision.ip || "unavailable";
     const userAgent = String(navigator.userAgent || "unknown").slice(0, 512);
     const responseRef = push(ref(db, `surveyResponses/${pendingSurvey.path}`));
     const accessLogRef = push(ref(db, `privateAccessLogs/${pendingSurvey.path}`));
@@ -1045,6 +1081,9 @@ $("#add-survey-question").addEventListener("click", () => addQuestionEditor());
 createForm.addEventListener("submit", createShortLink);
 $("#refresh-button").addEventListener("click", loadLinks);
 
+
+function setExpiryQuick(value) { const input=$("#expires-at-input"); if(!input)return; const d=new Date(); if(value==="midnight") d.setHours(24,0,0,0); else d.setTime(d.getTime()+Number(value)*3600000); input.value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16); }
+document.querySelectorAll("[data-expiry]").forEach(button=>button.addEventListener("click",()=>setExpiryQuick(button.dataset.expiry)));
 const initialRoutePath = consumeGitHubPagesRoute();
 if (!isConfigReady()) {
   if (initialRoutePath !== null) {

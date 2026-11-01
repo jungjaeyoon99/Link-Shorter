@@ -181,3 +181,25 @@ input:focus { border-color: #8b86f5; box-shadow: 0 0 0 4px rgba(79, 70, 229, .11
   .section-heading { align-items: center; }
   .footer { padding: 18px; }
 }
+
+
+/* Added: expiry shortcuts, survey choice controls, rate-limit settings and admin audit panel */
+.expiry-quick-buttons { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.rate-limit-group { grid-column:1 / -1; padding:14px; border:1px solid var(--line); border-radius:12px; background:#fafbff; }
+.rate-limit-group input[type="number"] { max-width:180px; }
+.survey-question-editor { grid-template-columns:minmax(160px,1fr) 190px minmax(160px,1fr) auto; }
+.survey-question-editor textarea { width:100%; min-width:0; padding:9px 10px; border:1px solid #d8deea; border-radius:9px; resize:vertical; font:inherit; font-size:12px; }
+.survey-question-field { display:grid; gap:9px; margin:0; padding:13px; border:1px solid var(--line); border-radius:12px; }
+.survey-question-field legend { padding:0 5px; color:#344054; font-size:13px; font-weight:800; }
+.choice-option { display:flex; align-items:center; gap:9px; font-size:13px; font-weight:500; }
+.choice-option input { width:17px; height:17px; flex:none; }
+.admin-logs-panel { margin-top:32px; padding:clamp(20px,3vw,30px); }
+.admin-logs-panel > input { margin:8px 0; }
+.admin-logs-panel .survey-response-table { min-width:760px; }
+@media (max-width:760px) { .survey-question-editor { grid-template-columns:1fr; } .rate-limit-group { grid-column:1; } }
+
+.survey-stat-block { margin:12px 0; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
+.survey-stat-block > strong { display:block; margin-bottom:10px; font-size:12px; }
+.survey-stat-line { display:grid; gap:6px; margin:8px 0; font-size:11px; color:#475467; }
+.survey-stat-track { height:8px; overflow:hidden; border-radius:99px; background:#edf0f7; }
+.survey-stat-track span { display:block; height:100%; border-radius:99px; background:var(--accent); }

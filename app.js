@@ -32,7 +32,8 @@ import {
   runTransaction,
   serverTimestamp,
   onValue,
-  limitToLast
+  limitToLast,
+  endAt
 } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-database.js";
 
 // Firebase Console > Project settings > Your apps에서 발급한 값으로 교체하세요.
@@ -69,6 +70,8 @@ const surveySubmitButton = $("#survey-submit-button");
 const surveyEnabledInput = $("#survey-enabled-input");
 const surveyBuilder = $("#survey-builder");
 const surveyQuestionList = $("#survey-question-list");
+const createRateLimitGroup = document.querySelector(".rate-limit-group");
+if (createRateLimitGroup) createRateLimitGroup.hidden = true;
 const surveyQuestionsContainer = $("#survey-questions-container");
 
 let auth = null;
@@ -203,6 +206,8 @@ async function startApplication(routePath) {
       if (observationId !== authObservationId || auth.currentUser?.uid !== user.uid) return;
 
       currentIsAdmin = roleSnapshot.val() === "admin";
+      const createRateGroup = document.querySelector(".rate-limit-group");
+      if (createRateGroup) createRateGroup.hidden = !currentIsAdmin;
       $("#user-email").textContent = user.email || user.uid;
       $("#role-badge").hidden = !currentIsAdmin;
       $("#user-bar").hidden = false;
@@ -210,7 +215,6 @@ async function startApplication(routePath) {
       switchView("dashboard");
       showStatus("");
       await loadLinks();
-      setupAdminAccessLogs();
     } catch (error) {
       // Do not leave the browser authenticated while forcing it back to the login screen.
       // That state made subsequent login attempts appear to do nothing when role reads were denied.
@@ -290,30 +294,97 @@ async function loadSurveyConfig(path) {
 
 
 function setupAdminAccessLogs() {
-  const panel=$("#admin-access-logs"); if(!panel || !currentIsAdmin)return; panel.hidden=false;
-  if(accessLogUnsubscribe)accessLogUnsubscribe();
-  const search=$("#access-log-search"), body=$("#access-log-rows"), status=$("#access-log-status");
-  const rowsByKey=new Map(), stops=[];
-  const draw=()=>{
-    body.replaceChildren(); const rows=[...rowsByKey.values()].sort((a,b)=>Number(b.timestamp||0)-Number(a.timestamp||0));
-    const term=String(search.value||"").toLowerCase();
-    rows.filter(r=>`${r.path} ${r.ip} ${r.userAgent} ${r.id}`.toLowerCase().includes(term)).slice(0,500).forEach(r=>{
-      const tr=document.createElement("tr"); [r.path,formatDate(Number(r.timestamp)),r.ip||"미기록",r.userAgent||"미기록",r.id].forEach(v=>{const td=document.createElement("td");td.textContent=String(v);tr.append(td);}); body.append(tr);
-    });
-    status.textContent=`최근 ${rows.length}건 수신 · 링크별 최근 100건까지 실시간 표시`;
+  const panel = $("#admin-access-logs");
+  if (!panel || !currentIsAdmin) return;
+  panel.hidden = false;
+  const search = $("#access-log-search"), ipFilter = $("#access-log-ip-filter");
+  const linkFilter = $("#access-log-link-filter"), fromFilter = $("#access-log-from");
+  const toFilter = $("#access-log-to"), body = $("#access-log-rows");
+  const status = $("#access-log-status"), count = $("#access-log-count");
+  const more = $("#access-log-more"), pageSize = 100;
+  const rowsByKey = new Map(), cursors = new Map(), exhausted = new Set(), failed = new Set();
+  let loading = false;
+  if (accessLogUnsubscribe) { accessLogUnsubscribe(); accessLogUnsubscribe = null; }
+  linkFilter.replaceChildren(new Option("전체 링크", ""));
+  currentLinks.forEach(item => linkFilter.add(new Option(`/${item.customPath}`, item.customPath)));
+
+  const filteredRows = () => {
+    const term = String(search.value || "").trim().toLowerCase();
+    const ipTerm = String(ipFilter.value || "").trim().toLowerCase();
+    const selectedPath = linkFilter.value;
+    const from = fromFilter.value ? new Date(`${fromFilter.value}T00:00:00`).getTime() : -Infinity;
+    const to = toFilter.value ? new Date(`${toFilter.value}T23:59:59.999`).getTime() : Infinity;
+    return [...rowsByKey.values()].filter(r => {
+      const ts = Number(r.timestamp || 0);
+      if (selectedPath && r.path !== selectedPath) return false;
+      if (ipTerm && !String(r.ip || "").toLowerCase().includes(ipTerm)) return false;
+      if (ts < from || ts > to) return false;
+      return !term || `${r.path} ${r.originalUrl} ${r.ip} ${r.userAgent} ${r.id}`.toLowerCase().includes(term);
+    }).sort((a,b) => Number(b.timestamp || 0) - Number(a.timestamp || 0) || String(b.id).localeCompare(String(a.id)));
   };
-  search.oninput=draw;
-  for(const item of currentLinks){
-    const logQuery=query(ref(db,`privateAccessLogs/${item.customPath}`),orderByChild("timestamp"),limitToLast(100));
-    const stop=onValue(logQuery,snapshot=>{
-      for(const key of [...rowsByKey.keys()])if(key.startsWith(`${item.customPath}::`))rowsByKey.delete(key);
-      snapshot.forEach(logSnap=>rowsByKey.set(`${item.customPath}::${logSnap.key}`,{path:item.customPath,id:logSnap.key,...(logSnap.val()||{})}));
-      draw();
-    },error=>{status.textContent=`${item.customPath} 로그 조회 오류: ${error.code||error.message}`;});
-    stops.push(stop);
-  }
-  accessLogUnsubscribe=()=>stops.forEach(stop=>stop());
-  if(!currentLinks.length)status.textContent="표시할 링크가 없습니다.";
+  const draw = () => {
+    body.replaceChildren();
+    const rows = filteredRows();
+    rows.forEach(r => {
+      const tr = document.createElement("tr");
+      [r.path, r.originalUrl || "-", r.timestamp ? formatDate(Number(r.timestamp)) : "-",
+       r.ip || "미기록", r.userAgent || "미기록", r.id].forEach(v => {
+        const td = document.createElement("td"); td.textContent = String(v); tr.append(td);
+      });
+      body.append(tr);
+    });
+    count.textContent = `${rows.length.toLocaleString()}건 표시 / ${rowsByKey.size.toLocaleString()}건 로드`;
+    status.textContent = failed.size
+      ? `일부 링크 조회 실패: ${[...failed].join(", ")} · 나머지 링크 결과는 계속 표시됩니다.`
+      : `로드된 로그 ${rowsByKey.size.toLocaleString()}건 · 링크별 ${pageSize}건 단위 · 최신순`;
+    more.disabled = loading || (cursors.size > 0 && [...cursors.keys()].every(path => exhausted.has(path)));
+  };
+  const loadPage = async (path, older = false) => {
+    const cursor = cursors.get(path);
+    const logRef = ref(db, `privateAccessLogs/${path}`);
+    const q = older && cursor
+      ? query(logRef, orderByChild("timestamp"), endAt(cursor.timestamp, cursor.id), limitToLast(pageSize + 1))
+      : query(logRef, orderByChild("timestamp"), limitToLast(pageSize));
+    const snap = await get(q), page = [];
+    snap.forEach(child => page.push({ path, id: child.key,
+      originalUrl: currentLinks.find(x => x.customPath === path)?.originalUrl || "-", ...(child.val() || {}) }));
+    page.sort((a,b) => Number(a.timestamp || 0) - Number(b.timestamp || 0) || String(a.id).localeCompare(String(b.id)));
+    const unique = page.filter(r => !rowsByKey.has(`${path}::${r.id}`));
+    unique.forEach(r => rowsByKey.set(`${path}::${r.id}`, r));
+    if (page.length < (older ? pageSize + 1 : pageSize) || (older && unique.length === 0)) exhausted.add(path);
+    if (unique.length) {
+      const oldest = unique[0];
+      cursors.set(path, { timestamp: Number(oldest.timestamp || 0), id: oldest.id });
+    } else if (!cursors.has(path)) {
+      cursors.set(path, { timestamp: 0, id: "" }); exhausted.add(path);
+    }
+  };
+  const refresh = async () => {
+    if (loading) return;
+    loading = true; rowsByKey.clear(); cursors.clear(); exhausted.clear(); failed.clear(); draw();
+    await Promise.all(currentLinks.map(async item => {
+      try { await loadPage(item.customPath, false); }
+      catch (error) { failed.add(item.customPath); console.error(`Access log query failed for ${item.customPath}:`, error); }
+    }));
+    loading = false; draw();
+  };
+  const loadMore = async () => {
+    if (loading) return;
+    loading = true; draw();
+    await Promise.all(currentLinks.filter(item => cursors.has(item.customPath) && !exhausted.has(item.customPath)).map(async item => {
+      try { await loadPage(item.customPath, true); failed.delete(item.customPath); }
+      catch (error) { failed.add(item.customPath); console.error(`Older access log query failed for ${item.customPath}:`, error); }
+    }));
+    loading = false; draw();
+  };
+  [search, ipFilter, linkFilter, fromFilter, toFilter].forEach(el => { el.oninput = draw; el.onchange = draw; });
+  more.onclick = loadMore;
+  $("#access-log-refresh").onclick = refresh;
+  accessLogUnsubscribe = () => {
+    more.onclick = null; $("#access-log-refresh").onclick = null;
+    [search, ipFilter, linkFilter, fromFilter, toFilter].forEach(el => { el.oninput = null; el.onchange = null; });
+  };
+  refresh();
 }
 
 async function loadLinks() {
@@ -342,6 +413,7 @@ async function loadLinks() {
     currentLinks.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
     $("#link-count").textContent = String(currentLinks.length);
     renderLinks();
+    if (currentIsAdmin) setupAdminAccessLogs();
   } catch (error) {
     $("#link-count").textContent = "—";
     emptyState.hidden = true;
@@ -744,6 +816,60 @@ function renderLinks() {
         actions.append(editSurveyButton);
       }
     }
+    if (currentIsAdmin) {
+      const rateButton = document.createElement("button");
+      rateButton.className = "button button-quiet button-small";
+      rateButton.type = "button";
+      rateButton.textContent = "IP 제한 설정";
+      rateButton.addEventListener("click", async () => {
+        try {
+          const snap = await get(ref(db, `rateLimitSettings/${item.customPath}`));
+          const cfg = snap.exists() ? (snap.val() || {}) : {
+            enabled: item.rateLimitEnabled === true,
+            max: item.rateLimitMax || 5,
+            message: item.rateLimitMessage || "접속 횟수 제한에 도달했습니다. 관리자에게 문의해 주세요."
+          };
+          const editor = document.createElement("section"); editor.className = "survey-edit-overlay";
+          const panel = document.createElement("div"); panel.className = "survey-edit-panel";
+          const heading = document.createElement("h3"); heading.textContent = `/${item.customPath} IP별 접근 제한`;
+          const enabledLabel = document.createElement("label"); enabledLabel.className = "checkbox-label";
+          const enabled = document.createElement("input"); enabled.type = "checkbox"; enabled.checked = cfg.enabled === true;
+          enabledLabel.append(enabled, document.createTextNode(" IP별 접근 횟수 제한 활성화"));
+          const maxLabel = document.createElement("label"); maxLabel.textContent = "허용 접근 횟수 (1~100)";
+          const maxInput = document.createElement("input"); maxInput.type = "number"; maxInput.min = "1"; maxInput.max = "100"; maxInput.value = String(Math.min(100, Math.max(1, Number(cfg.max || 5))));
+          const msgLabel = document.createElement("label"); msgLabel.textContent = "제한 초과 메시지";
+          const msgInput = document.createElement("input"); msgInput.type = "text"; msgInput.maxLength = 240; msgInput.value = String(cfg.message || "").slice(0,240);
+          const feedback = document.createElement("p"); feedback.className = "field-help"; feedback.setAttribute("aria-live","polite");
+          const save = document.createElement("button"); save.className = "button button-primary"; save.type = "button"; save.textContent = "저장";
+          const cancel = document.createElement("button"); cancel.className = "button button-quiet"; cancel.type = "button"; cancel.textContent = "취소"; cancel.onclick = () => editor.remove();
+          save.onclick = async () => {
+            const max = Number(maxInput.value);
+            if (!Number.isInteger(max) || max < 1 || max > 100) { feedback.textContent = "허용 횟수는 1~100의 정수여야 합니다."; return; }
+            save.disabled = true; feedback.textContent = "저장 중…";
+            try {
+              await set(ref(db, `rateLimitSettings/${item.customPath}`), {
+                enabled: enabled.checked, max,
+                message: String(msgInput.value || "접속 횟수 제한에 도달했습니다.").slice(0,240),
+                updatedAt: Date.now(), updatedBy: currentUser.uid
+              });
+              feedback.textContent = "저장했습니다. 이후 접속부터 새 설정을 적용합니다.";
+              showStatus(`/${item.customPath} IP 제한 설정을 저장했습니다.`, "success");
+              editor.remove();
+            } catch (error) {
+              const denied = /PERMISSION_DENIED|permission_denied|permission denied/i.test(`${error?.code||""} ${error?.message||""}`);
+              feedback.textContent = denied ? "Firebase Rules에서 권한이 거부되었습니다." : "네트워크 또는 Firebase 오류로 저장하지 못했습니다.";
+              console.error("Saving rate limit settings failed:", error);
+            } finally { save.disabled = false; }
+          };
+          panel.append(heading, enabledLabel, maxLabel, maxInput, msgLabel, msgInput, feedback, save, cancel);
+          editor.append(panel); document.body.append(editor);
+        } catch (error) {
+          showStatus(/PERMISSION_DENIED|permission.denied/i.test(`${error?.code||""} ${error?.message||""}`) ? "IP 제한 설정 조회 권한이 없습니다." : "IP 제한 설정을 불러오지 못했습니다. 네트워크를 확인해 주세요.", "error");
+          console.error(error);
+        }
+      });
+      actions.append(rateButton);
+    }
     actions.append(copyButton, qrButton, expiryButton, deleteButton);
     card.append(main, actions);
     linksList.append(card);
@@ -796,9 +922,6 @@ async function createShortLink(event) {
         creatorUid: currentUser.uid,
         createdAt: Date.now(),
         isDeleted: false,
-        rateLimitEnabled: formData.get("rateLimitEnabled") === "on",
-        rateLimitMax: Math.min(100, Math.max(1, Number(formData.get("rateLimitMax") || 5))),
-        rateLimitMessage: String(formData.get("rateLimitMessage") || "접속 횟수 제한에 도달했습니다. 관리자에게 문의해 주세요.").slice(0,240),
         ...(expiresAt ? { expiresAt } : {})
       };
     }, { applyLocally: false });
@@ -806,6 +929,22 @@ async function createShortLink(event) {
     if (!result.committed) {
       showStatus(`/${customPath} 경로는 이미 사용 중입니다. 다른 경로를 선택해 주세요.`, "error");
       return;
+    }
+
+    if (currentIsAdmin) {
+      try {
+        await set(ref(db, `rateLimitSettings/${customPath}`), {
+          enabled: formData.get("rateLimitEnabled") === "on",
+          max: Math.min(100, Math.max(1, Number(formData.get("rateLimitMax") || 5))),
+          message: String(formData.get("rateLimitMessage") || "접속 횟수 제한에 도달했습니다. 관리자에게 문의해 주세요.").slice(0, 240),
+          updatedAt: Date.now(), updatedBy: currentUser.uid
+        });
+      } catch (settingsError) {
+        console.error("Saving initial rate limit settings failed:", settingsError);
+        try { await remove(ref(db, `links/${customPath}`)); } catch (rollbackError) { console.error(rollbackError); }
+        showStatus("관리자 접근 제한 설정 저장에 실패해 링크 생성을 취소했습니다. Rules를 확인해 주세요.", "error");
+        await loadLinks(); return;
+      }
     }
 
     if (surveyEnabled) {
@@ -876,23 +1015,26 @@ async function checkAndRecordAccess(path) {
   let allowed = true;
   let message = "";
   try {
-    const [enabledSnap, maxSnap, messageSnap] = await Promise.all([
-      get(ref(db, `links/${path}/rateLimitEnabled`)),
-      get(ref(db, `links/${path}/rateLimitMax`)),
-      get(ref(db, `links/${path}/rateLimitMessage`))
-    ]);
-    if (enabledSnap.val() === true && ip !== "unavailable") {
+    const settingsSnap = await get(ref(db, `rateLimitSettings/${path}`));
+    const settings = settingsSnap.exists() ? (settingsSnap.val() || {}) : null;
+    // Legacy fallback: old link-level fields remain readable until an administrator saves new settings.
+    const enabled = settings ? settings.enabled === true : (await get(ref(db, `links/${path}/rateLimitEnabled`))).val() === true;
+    const maxValue = settings ? settings.max : (await get(ref(db, `links/${path}/rateLimitMax`))).val();
+    const messageValue = settings ? settings.message : (await get(ref(db, `links/${path}/rateLimitMessage`))).val();
+    if (enabled && ip !== "unavailable") {
       const key = await sha256Hex(ip);
       const counter = ref(db, `rateLimits/${path}/${key}`);
       const tx = await runTransaction(counter, current => Number(current || 0) + 1, { applyLocally: false });
-      if (Number(tx.snapshot.val() || 0) > Math.max(1, Number(maxSnap.val() || 5))) {
+      if (Number(tx.snapshot.val() || 0) > Math.max(1, Number(maxValue || 5))) {
         allowed = false;
-        message = String(messageSnap.val() || "접속 횟수 제한에 도달했습니다.").slice(0, 240);
+        message = String(messageValue || "접속 횟수 제한에 도달했습니다.").slice(0, 240);
       }
     }
   } catch (rateLimitError) {
-    // 로그는 이미 저장되었습니다. 제한 기능 오류 때문에 기록을 누락시키거나 이동을 막지 않습니다.
-    console.warn("Rate-limit check failed after access log was saved:", rateLimitError);
+    // 제한 설정이 켜져 있는데 카운터를 확인할 수 없으면 우회 허용하지 않습니다.
+    console.error("Rate-limit enforcement failed after access log was saved:", rateLimitError);
+    allowed = false;
+    message = "접속 횟수 제한을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요.";
   }
   return { allowed, message, accessLogId };
 }

@@ -121,10 +121,17 @@
         </section>
 
         <section id="admin-access-logs" class="panel admin-logs-panel" hidden aria-labelledby="admin-logs-title">
-          <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2 id="admin-logs-title">실시간 접속 기록</h2></div></div>
-          <input id="access-log-search" type="search" placeholder="경로, IP, 브라우저, 로그 ID 검색" aria-label="접속 기록 검색">
-          <p id="access-log-status" class="field-help" aria-live="polite">로그 연결 중…</p>
-          <div class="survey-response-table-wrap"><table class="survey-response-table"><thead><tr><th>경로</th><th>접속 시각</th><th>IP</th><th>User-Agent</th><th>로그 ID</th></tr></thead><tbody id="access-log-rows"></tbody></table></div>
+          <div class="section-heading"><div><p class="eyebrow">ADMIN ONLY</p><h2 id="admin-logs-title">전체 접속 로그</h2></div><button id="access-log-refresh" class="button button-quiet button-small" type="button">새로고침</button></div>
+          <div class="admin-log-filters">
+            <label>링크별 조회<select id="access-log-link-filter"><option value="">전체 링크</option></select></label>
+            <label>IP 주소<input id="access-log-ip-filter" type="search" placeholder="IP 주소"></label>
+            <label>시작일<input id="access-log-from" type="date"></label>
+            <label>종료일<input id="access-log-to" type="date"></label>
+            <label class="admin-log-search">검색<input id="access-log-search" type="search" placeholder="링크 ID, 원본 URL, User-Agent, 로그 ID"></label>
+          </div>
+          <p id="access-log-status" class="field-help" aria-live="polite">로그를 불러오는 중…</p>
+          <div class="survey-response-table-wrap"><table class="survey-response-table"><thead><tr><th>링크 ID</th><th>원본 링크</th><th>접속 시각</th><th>IP</th><th>User-Agent</th><th>로그 ID</th></tr></thead><tbody id="access-log-rows"></tbody></table></div>
+          <div class="admin-log-footer"><span id="access-log-count">0건</span><button id="access-log-more" class="button button-quiet" type="button">이전 로그 더 불러오기</button></div>
         </section>
       </section>
 

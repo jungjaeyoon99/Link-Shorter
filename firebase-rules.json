@@ -12,32 +12,72 @@
         "$logId": {
           ".write": "auth != null && auth.uid === $uid && !data.exists()",
           ".validate": "newData.hasChildren(['timestamp','email','uid','ip','userAgent']) && newData.child('uid').val() === $uid",
-          "timestamp": { ".validate": "newData.isNumber()" },
-          "email": { ".validate": "newData.isString() && newData.val().length <= 320" },
-          "uid": { ".validate": "newData.isString() && newData.val() === $uid" },
-          "ip": { ".validate": "newData.isString() && newData.val().length <= 80" },
-          "userAgent": { ".validate": "newData.isString() && newData.val().length <= 512" },
-          "$other": { ".validate": false }
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "email": {
+            ".validate": "newData.isString() && newData.val().length <= 320"
+          },
+          "uid": {
+            ".validate": "newData.isString() && newData.val() === $uid"
+          },
+          "ip": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "userAgent": {
+            ".validate": "newData.isString() && newData.val().length <= 512"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     },
     "links": {
-      ".indexOn": ["creatorUid"],
+      ".indexOn": [
+        "creatorUid"
+      ],
       ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (query.orderByChild === 'creatorUid' && query.equalTo === auth.uid))",
       "$customPath": {
         ".read": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || !data.exists() || data.child('creatorUid').val() === auth.uid)",
         ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (!data.exists() && newData.child('creatorUid').val() === auth.uid) || (data.exists() && data.child('creatorUid').val() === auth.uid && (!newData.exists() || newData.child('creatorUid').val() === data.child('creatorUid').val())))",
-        ".validate": "newData.hasChildren(['originalUrl','creatorUid','createdAt'])",
-        "originalUrl": { ".read": true, ".validate": "newData.isString() && newData.val().length <= 2048" },
-        "creatorUid": { ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())" },
-        "createdAt": { ".validate": "newData.isNumber()" },
-        "expiresAt": { ".read": true, ".validate": "newData.isNumber() && newData.val() > 0" },
-        "isDeleted": { ".read": true, ".validate": "newData.isBoolean()" },
-        "deletedAt": { ".validate": "newData.isNumber()" },
-        "deletedBy": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "rateLimitEnabled": { ".read": true, ".validate": "newData.isBoolean()" },
-        "rateLimitMax": { ".read": true, ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100" },
-        "rateLimitMessage": { ".read": true, ".validate": "newData.isString() && newData.val().length <= 240" }
+        ".validate": "newData.hasChildren(['originalUrl','creatorUid','createdAt']) && (root.child('roles').child(auth.uid).val() === 'admin' || (newData.child('rateLimitEnabled').val() === data.child('rateLimitEnabled').val() && newData.child('rateLimitMax').val() === data.child('rateLimitMax').val() && newData.child('rateLimitMessage').val() === data.child('rateLimitMessage').val()))",
+        "originalUrl": {
+          ".read": true,
+          ".validate": "newData.isString() && newData.val().length <= 2048"
+        },
+        "creatorUid": {
+          ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val())"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "expiresAt": {
+          ".read": true,
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
+        "isDeleted": {
+          ".read": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "deletedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "deletedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "rateLimitEnabled": {
+          ".read": true,
+          ".validate": "newData.isBoolean()"
+        },
+        "rateLimitMax": {
+          ".read": true,
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100"
+        },
+        "rateLimitMessage": {
+          ".read": true,
+          ".validate": "newData.isString() && newData.val().length <= 240"
+        }
       }
     },
     "surveyConfigs": {
@@ -45,21 +85,41 @@
         ".read": true,
         ".write": "auth != null && (root.child('roles').child(auth.uid).val() === 'admin' || (!data.exists() && root.child('links').child($customPath).child('creatorUid').val() === auth.uid))",
         ".validate": "newData.hasChildren(['enabled']) && newData.child('enabled').isBoolean() && (!newData.child('enabled').val() || newData.child('questions').exists())",
-        "enabled": { ".validate": "newData.isBoolean()" },
-        "createdAt": { ".validate": "newData.isNumber()" },
-        "createdBy": { ".validate": "newData.isString() && newData.val().length <= 128" },
-        "updatedAt": { ".validate": "newData.isNumber()" },
-        "updatedBy": { ".validate": "newData.isString() && newData.val().length <= 128" },
+        "enabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "createdBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
         "questions": {
           "$questionId": {
             ".validate": "newData.hasChildren(['id','label','type']) && newData.child('id').val() === $questionId && newData.child('label').isString() && newData.child('label').val().length >= 1 && newData.child('label').val().length <= 120 && (newData.child('type').val() === 'int' || newData.child('type').val() === 'char' || ((newData.child('type').val() === 'singleChoice' || newData.child('type').val() === 'multipleChoice') && newData.child('options').exists()))",
-            "id": { ".validate": "newData.isString() && newData.val() === $questionId" },
-            "label": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120" },
-            "type": { ".validate": "newData.val() === 'int' || newData.val() === 'char' || newData.val() === 'singleChoice' || newData.val() === 'multipleChoice'" },
-            "options": {
-              "$optionIndex": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120" }
+            "id": {
+              ".validate": "newData.isString() && newData.val() === $questionId"
             },
-            "$other": { ".validate": false }
+            "label": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120"
+            },
+            "type": {
+              ".validate": "newData.val() === 'int' || newData.val() === 'char' || newData.val() === 'singleChoice' || newData.val() === 'multipleChoice'"
+            },
+            "options": {
+              "$optionIndex": {
+                ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 120"
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         }
       }
@@ -73,36 +133,81 @@
           "answers": {
             "$questionId": {
               ".validate": "(root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'int' && newData.isNumber()) || (root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'char' && newData.isString() && newData.val().length <= 200) || (root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'singleChoice' && newData.isString()) || (root.child('surveyConfigs').child($customPath).child('questions').child($questionId).child('type').val() === 'multipleChoice' && newData.hasChildren())",
-              "$optionIndex": { ".validate": "newData.isString() && newData.val().length <= 120" }
+              "$optionIndex": {
+                ".validate": "newData.isString() && newData.val().length <= 120"
+              }
             }
           },
-          "consent": { ".validate": "newData.isBoolean() && newData.val() === true" },
-          "timestamp": { ".validate": "newData.isNumber()" },
-          "accessLogId": { ".validate": "newData.isString() && newData.val().length <= 128" },
-          "$other": { ".validate": false }
+          "consent": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "accessLogId": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     },
     "privateAccessLogs": {
       "$customPath": {
-        ".indexOn": ["timestamp"],
+        ".indexOn": [
+          "timestamp"
+        ],
         ".read": "auth != null && root.child('roles').child(auth.uid).val() === 'admin'",
         "$logId": {
           ".write": "!data.exists() && root.child('links').child($customPath).child('originalUrl').exists() && root.child('links').child($customPath).child('isDeleted').val() !== true && (!root.child('links').child($customPath).child('expiresAt').exists() || root.child('links').child($customPath).child('expiresAt').val() > now)",
           ".validate": "newData.hasChildren(['timestamp','ip','userAgent'])",
-          "timestamp": { ".validate": "newData.isNumber()" },
-          "ip": { ".validate": "newData.isString() && newData.val().length <= 80" },
-          "userAgent": { ".validate": "newData.isString() && newData.val().length <= 512" },
-          "$other": { ".validate": false }
+          "timestamp": {
+            ".validate": "newData.isNumber()"
+          },
+          "ip": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "userAgent": {
+            ".validate": "newData.isString() && newData.val().length <= 512"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     },
     "rateLimits": {
       "$customPath": {
-        ".read": true,
+        ".read": "auth != null && root.child('roles').child(auth.uid).val() === 'admin'",
         "$ipHash": {
-          ".write": "root.child('links').child($customPath).child('originalUrl').exists() && root.child('links').child($customPath).child('isDeleted').val() !== true && root.child('links').child($customPath).child('rateLimitEnabled').val() === true && (!root.child('links').child($customPath).child('expiresAt').exists() || root.child('links').child($customPath).child('expiresAt').val() > now)",
+          ".write": "auth != null && root.child('roles').child(auth.uid).val() === 'admin'",
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000000"
+        }
+      }
+    },
+    "rateLimitSettings": {
+      "$customPath": {
+        ".read": true,
+        ".write": "auth != null && root.child('roles').child(auth.uid).val() === 'admin'",
+        ".validate": "newData.hasChildren(['enabled','max','message']) && newData.child('enabled').isBoolean() && newData.child('max').isNumber() && newData.child('max').val() >= 1 && newData.child('max').val() <= 100 && newData.child('message').isString() && newData.child('message').val().length <= 240",
+        "enabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "max": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100"
+        },
+        "message": {
+          ".validate": "newData.isString() && newData.val().length <= 240"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "updatedBy": {
+          ".validate": "newData.isString() && auth != null && newData.val() === auth.uid"
+        },
+        "$other": {
+          ".validate": false
         }
       }
     }

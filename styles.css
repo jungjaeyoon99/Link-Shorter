@@ -203,3 +203,39 @@ input:focus { border-color: #8b86f5; box-shadow: 0 0 0 4px rgba(79, 70, 229, .11
 .survey-stat-line { display:grid; gap:6px; margin:8px 0; font-size:11px; color:#475467; }
 .survey-stat-track { height:8px; overflow:hidden; border-radius:99px; background:#edf0f7; }
 .survey-stat-track span { display:block; height:100%; border-radius:99px; background:var(--accent); }
+
+
+/* 관리자 접속 로그 필터 및 링크별 접근 제한 편집 */
+.admin-log-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
+  margin: 16px 0 10px;
+}
+.admin-log-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary, #667085);
+  font-size: .82rem;
+  font-weight: 600;
+}
+.admin-log-filters input, .admin-log-filters select {
+  width: 100%;
+  min-width: 0;
+}
+.admin-log-search { grid-column: span 2; }
+.admin-log-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+}
+.admin-logs-panel .survey-response-table { min-width: 980px; }
+.admin-logs-panel td { overflow-wrap: anywhere; max-width: 360px; }
+.rate-limit-group[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  .admin-log-search { grid-column: auto; }
+  .admin-log-footer { align-items: stretch; flex-direction: column; }
+}

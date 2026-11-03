@@ -838,43 +838,63 @@ async function createShortLink(event) {
   }
 }
 
-function waitAtMost(promise, milliseconds) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => window.setTimeout(resolve, milliseconds))
-  ]);
-}
-
 async function getPublicIp() {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 1200);
+  const timeout = window.setTimeout(() => controller.abort(), 1500);
   try {
     const response = await fetch("https://api.ipify.org?format=json", {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal
+      method: "GET", cache: "no-store", signal: controller.signal
     });
     if (!response.ok) return "unavailable";
     const json = await response.json();
     return typeof json.ip === "string" ? json.ip.slice(0, 80) : "unavailable";
-  } catch {
+  } catch (error) {
+    console.warn("Public IP lookup failed; continuing with unavailable IP:", error);
     return "unavailable";
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
-async function sha256Hex(value) { const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)); return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join(""); }
-async function checkAndRecordAccess(path, writeLog = true) {
-  const ip=await getPublicIp();
-  const [enabledSnap,maxSnap,messageSnap]=await Promise.all([get(ref(db,`links/${path}/rateLimitEnabled`)),get(ref(db,`links/${path}/rateLimitMax`)),get(ref(db,`links/${path}/rateLimitMessage`))]);
-  if(enabledSnap.val()===true && ip!=="unavailable") {
-    const key=await sha256Hex(ip); const counter=ref(db,`rateLimits/${path}/${key}`);
-    const tx=await runTransaction(counter,current=>Number(current||0)+1,{applyLocally:false});
-    if(Number(tx.snapshot.val()||0)>Math.max(1,Number(maxSnap.val()||5))) return {allowed:false,message:String(messageSnap.val()||"접속 횟수 제한에 도달했습니다.").slice(0,240)};
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// 접속 시도당 로그를 한 번만 생성합니다. 설문 제출 시에는 재호출하지 않습니다.
+async function checkAndRecordAccess(path) {
+  const ip = await getPublicIp();
+  const userAgent = String(navigator.userAgent || "unknown").slice(0, 512);
+  const timestamp = Date.now();
+  const logRef = push(ref(db, `privateAccessLogs/${path}`));
+  const accessLogId = logRef.key;
+  if (!accessLogId) throw new Error("접속 로그 ID를 생성하지 못했습니다.");
+
+  // 로그를 먼저 저장합니다. IP 조회 장애 시에도 unavailable 값으로 저장을 시도합니다.
+  await set(logRef, { timestamp, ip, userAgent });
+
+  let allowed = true;
+  let message = "";
+  try {
+    const [enabledSnap, maxSnap, messageSnap] = await Promise.all([
+      get(ref(db, `links/${path}/rateLimitEnabled`)),
+      get(ref(db, `links/${path}/rateLimitMax`)),
+      get(ref(db, `links/${path}/rateLimitMessage`))
+    ]);
+    if (enabledSnap.val() === true && ip !== "unavailable") {
+      const key = await sha256Hex(ip);
+      const counter = ref(db, `rateLimits/${path}/${key}`);
+      const tx = await runTransaction(counter, current => Number(current || 0) + 1, { applyLocally: false });
+      if (Number(tx.snapshot.val() || 0) > Math.max(1, Number(maxSnap.val() || 5))) {
+        allowed = false;
+        message = String(messageSnap.val() || "접속 횟수 제한에 도달했습니다.").slice(0, 240);
+      }
+    }
+  } catch (rateLimitError) {
+    // 로그는 이미 저장되었습니다. 제한 기능 오류 때문에 기록을 누락시키거나 이동을 막지 않습니다.
+    console.warn("Rate-limit check failed after access log was saved:", rateLimitError);
   }
-  if(writeLog){const log=push(ref(db,`privateAccessLogs/${path}`));await set(log,{timestamp:Date.now(),ip,userAgent:String(navigator.userAgent||"unknown").slice(0,512)});}
-  return {allowed:true,ip};
+  return { allowed, message, accessLogId };
 }
 
 function showRedirectError(title, message) {
@@ -918,19 +938,42 @@ async function resolveShortLink(path) {
       return;
     }
 
+    // 최초 접속 시 로그를 저장한 뒤, 설문 표시 또는 원본 URL 이동을 진행합니다.
+    let access;
+    try {
+      access = await checkAndRecordAccess(path);
+    } catch (logError) {
+      console.error("Access log save failed:", logError);
+      if (surveyConfig.enabled === true) {
+        showRedirectError("접속 기록 저장 실패", "접속 기록을 저장하지 못해 설문을 표시하지 않았습니다. 잠시 후 다시 시도해 주세요.");
+      } else {
+        redirectTitle.textContent = "접속 기록 저장 실패";
+        redirectMessage.textContent = "접속 기록 저장에 실패했습니다. 원본 링크 이동을 별도로 시도합니다.";
+        window.location.replace(originalUrl);
+      }
+      return;
+    }
+
+    if (!access.allowed) {
+      showRedirectError("접속 횟수 제한", access.message);
+      return;
+    }
+
     if (surveyConfig.enabled === true) {
-      pendingSurvey = { path, originalUrl, questions: Object.values(surveyConfig.questions || {}) };
+      pendingSurvey = {
+        path, originalUrl,
+        questions: Object.values(surveyConfig.questions || {}),
+        accessLogId: access.accessLogId
+      };
       renderSurveyQuestions(pendingSurvey.questions);
       redirectSpinner.classList.add("stopped");
       redirectTitle.textContent = "설문조사";
-      redirectMessage.textContent = "원본 사이트로 이동하기 전에 아래 정보를 입력해 주세요.";
+      redirectMessage.textContent = "아래 질문에 응답해 주세요. 접속 기록은 이미 저장되었습니다.";
       surveyForm.hidden = false;
       redirectHome.hidden = true;
       return;
     }
 
-    const consent=window.confirm("개인정보 안내\n이 링크 이용 시 접속 IP 주소, 접속 시각, 브라우저 정보(User-Agent)가 저장될 수 있습니다. 동의하지 않으면 접속 기록을 저장하지 않고 이동합니다. 계속하시겠습니까?");
-    if(consent){ redirectTitle.textContent="접속 기록을 저장하고 있습니다."; redirectMessage.textContent="잠시 후 원본 페이지로 이동합니다."; const result=await checkAndRecordAccess(path); if(!result.allowed){showRedirectError("접속 횟수 제한",result.message);return;} }
     window.location.replace(originalUrl);
   } catch (error) {
     showRedirectError("링크를 열 수 없습니다.", "데이터베이스 연결을 확인하거나 잠시 후 다시 시도해 주세요.");
@@ -959,36 +1002,24 @@ surveyForm.addEventListener("submit", async (event) => {
   surveySubmitButton.disabled = true;
   surveySubmitButton.textContent = "저장 중…";
   try {
-    // 응답과 접속 로그를 한 번의 원자적 업데이트로 저장해 IP와 응답의 연결이 어긋나지 않게 합니다.
+    if (!pendingSurvey.accessLogId) {
+      throw new Error("접속 로그가 저장되지 않아 설문 응답과 연결할 수 없습니다.");
+    }
     const timestamp = Date.now();
-    const decision = await checkAndRecordAccess(pendingSurvey.path, false);
-    if (!decision.allowed) throw new Error(decision.message);
-    const ip = decision.ip || "unavailable";
-    const userAgent = String(navigator.userAgent || "unknown").slice(0, 512);
     const responseRef = push(ref(db, `surveyResponses/${pendingSurvey.path}`));
-    const accessLogRef = push(ref(db, `privateAccessLogs/${pendingSurvey.path}`));
     const responseId = responseRef.key;
-    const accessLogId = accessLogRef.key;
+    if (!responseId) throw new Error("설문 응답 ID를 생성하지 못했습니다.");
 
-    if (!responseId || !accessLogId) throw new Error("Unable to create response/log IDs");
-
-    const updates = {};
-    updates[`surveyResponses/${pendingSurvey.path}/${responseId}`] = {
+    // 최초 접속 때 생성된 로그를 참조만 합니다. 여기서 접속 로그를 재생성하지 않습니다.
+    await set(responseRef, {
       answers,
       consent: true,
       timestamp,
-      accessLogId
-    };
-    updates[`privateAccessLogs/${pendingSurvey.path}/${accessLogId}`] = {
-      timestamp,
-      ip,
-      userAgent,
-      responseId
-    };
-    await update(ref(db), updates);
+      accessLogId: pendingSurvey.accessLogId
+    });
 
     redirectTitle.textContent = "제출 완료";
-    redirectMessage.textContent = "응답과 접속 로그를 저장했습니다. 원본 사이트로 이동합니다.";
+    redirectMessage.textContent = "설문 응답이 저장되었습니다. 접속 로그는 최초 접속 시 저장되었습니다. 원본 사이트로 이동합니다.";
     surveyForm.hidden = true;
     window.location.replace(pendingSurvey.originalUrl);
   } catch (error) {
